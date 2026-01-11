@@ -14,7 +14,7 @@ NO HARDCODED KEYWORDS - fully dynamic based on configured niche!
 import json
 import logging
 from datetime import datetime
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from openai import OpenAI
 
 # Import channel configuration
@@ -178,7 +178,7 @@ def get_latest_news(niche: str = None, max_results: int = 3) -> list:
     for term in search_terms:
         try:
             results = DDGS().news(
-                keywords=term, 
+                query=term, 
                 region="wt-wt", 
                 safesearch="moderate",
                 timelimit="w",  # Last week

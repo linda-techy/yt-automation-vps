@@ -24,12 +24,19 @@ def validate_thumbnail_production_ready(image_path, text, video_type):
     issues = []
     warnings = []
     
-    # Rule 1: Text word count (3-5 words)
+    # Rule 1: Text word count (TOP 0.1% Strategy - Shorter = Bigger text!)
     words = text.split()
-    if len(words) < 3:
-        issues.append(f"Text too short ({len(words)} words). Minimum 3 words.")
-    elif len(words) > 5:
-        issues.append(f"Text too long ({len(words)} words). Maximum 5 words.")
+    if video_type == "short":
+        # Shorts: 1-3 words (Mr. Beast style - BIGGER text, more impact)
+        if len(words) > 3:
+            issues.append(f"Shorts text too long ({len(words)} words). Maximum 3 words for bigger text.")
+        # No minimum - even 1 word is powerful!
+    else:  # long
+        # Long: 2-4 words optimal
+        if len(words) < 2:
+            warnings.append(f"Long video text very short ({len(words)} words).")
+        elif len(words) > 4:
+            issues.append(f"Long video text too long ({len(words)} words). Maximum 4 words.")
     
     # Rule 2: Aspect ratio validation
     try:

@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 import edge_tts
 from openai import OpenAI
 from pathlib import Path
@@ -105,6 +106,7 @@ def generate_voice(text, output_path="videos/temp/voice.mp3"):
 
         return output_path
     except Exception as e:
+        logging.error(f"[TTS] Voice generation failed: {e}")
         print(f"TTS Error: {e}")
         return None
 
@@ -112,48 +114,88 @@ def generate_voice_long(text, output_path="videos/temp/voice_long.mp3"):
     """
     Handles long-form text by chunking, generating segments, and concatenation.
     Essential for 8-10 min videos to avoid API timeouts.
+    
+    Raises:
+        Exception: If voice generation fails (no silent failures)
     """
+    from moviepy.editor import concatenate_audioclips, AudioFileClip
+    
+    chunk_files = []  # Track for cleanup
+    audio_clips = []  # Track for cleanup
+    
     try:
-        from moviepy.editor import concatenate_audioclips, AudioFileClip
-        import glob
-        
         # 1. Chunk Text (Split by newlines or approx 500 chars)
         chunks = [c.strip() for c in text.split('\n') if c.strip()]
         
-        audio_files = []
-        full_audio_clips = []
+        if not chunks:
+            raise ValueError("No text content to convert to speech")
         
+        logging.info(f"[TTS-Long] Processing {len(chunks)} chunks")
         print(f"Processing Long-Form Audio: {len(chunks)} chunks")
         
+        # 2. Generate each chunk
         for i, chunk in enumerate(chunks):
             chunk_path = f"videos/temp/chunk_{i}.mp3"
             
-            # Use existing single-gen function
-            res = generate_voice(chunk, output_path=chunk_path)
-            
-            if res and os.path.exists(res):
-                audio_files.append(res)
-                full_audio_clips.append(AudioFileClip(res))
-                print(f"Generated Chunk {i+1}/{len(chunks)}")
-            else:
-                print(f"Failed to generate chunk {i}: {chunk[:50]}...")
+            try:
+                # Use existing single-gen function
+                res = generate_voice(chunk, output_path=chunk_path)
                 
-        if not full_audio_clips:
-            return None
-            
-        # 2. Concatenate
-        final_audio = concatenate_audioclips(full_audio_clips)
-        final_audio.write_audiofile(output_path)
+                if not res:
+                    raise Exception(f"Chunk {i} generation returned None")
+                
+                if not os.path.exists(res):
+                    raise FileNotFoundError(f"Chunk file not created: {res}")
+                
+                # Validate audio file is not empty
+                file_size = os.path.getsize(res)
+                if file_size < 1000:  # Less than 1KB is suspicious
+                    raise ValueError(f"Chunk {i} audio file too small ({file_size} bytes)")
+                
+                chunk_files.append(res)
+                audio_clips.append(AudioFileClip(res))
+                logging.info(f"[TTS-Long] Chunk {i+1}/{len(chunks)} complete ({file_size} bytes)")
+                print(f"Generated Chunk {i+1}/{len(chunks)}")
+                
+            except Exception as e:
+                logging.error(f"[TTS-Long] Chunk {i} failed: {e}")
+                raise Exception(f"Failed to generate chunk {i}/{len(chunks)}: {str(e)}")
         
-        # Cleanup clips to close file handles
-        for c in full_audio_clips: 
-            c.close()
-            
+        if not audio_clips:
+            raise Exception("No audio chunks generated successfully")
+        
+        # 3. Concatenate all chunks
+        logging.info(f"[TTS-Long] Concatenating {len(audio_clips)} audio chunks...")
+        final_audio = concatenate_audioclips(audio_clips)
+        
+        # 4. Write final output
+        logging.info(f"[TTS-Long] Writing final audio to {output_path}")
+        final_audio.write_audiofile(output_path, logger=None)  # Suppress moviepy verbose logging
+        
+        # 5. Validate output file
+        if not os.path.exists(output_path):
+            raise FileNotFoundError(f"Final audio file not created: {output_path}")
+        
+        final_size = os.path.getsize(output_path)
+        if final_size < 10000:  # Less than 10KB is suspicious
+            raise ValueError(f"Final audio file too small ({final_size} bytes)")
+        
+        logging.info(f"[TTS-Long] Success! Final audio: {final_size/1024:.1f}KB")
+        print(f"[SUCCESS] Long-form audio generated: {final_size/1024:.1f}KB")
+        
         return output_path
         
     except Exception as e:
-        print(f"Long-Form TTS Error: {e}")
-        return None
+        logging.error(f"[TTS-Long] FAILED: {str(e)}", exc_info=True)
+        raise Exception(f"Long-form voice generation failed: {str(e)}")
+        
+    finally:
+        # Cleanup: Close all audio clips to release file handles
+        for clip in audio_clips:
+            try:
+                clip.close()
+            except:
+                pass
 
 if __name__ == "__main__":
     generate_voice("This is a test of the automatic voice generation system.")
