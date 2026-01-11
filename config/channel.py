@@ -176,6 +176,24 @@ class ChannelConfig:
     @property
     def upload_time(self) -> str:
         return self.get("schedule.upload_time", "12:00")
+    
+    @property
+    def topic_keywords(self) -> list:
+        """Get topic keywords for content discovery."""
+        # First try niche.topic_keywords (if exists in config)
+        keywords = self.get("niche.topic_keywords", None)
+        if keywords:
+            return keywords
+        
+        # Fallback: derive from niche and common keywords
+        niche = self.niche
+        content_types = self.get("niche.content_types", [])
+        example_topics = self.get("niche.example_topics", [])
+        
+        # Combine niche + content types as keywords
+        derived_keywords = [niche] + content_types[:3]  # Max 4 keywords
+        return derived_keywords if derived_keywords else ["General Topics"]
+
 
 
 # Global instance for easy import

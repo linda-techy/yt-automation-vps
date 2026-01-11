@@ -160,6 +160,22 @@ def upload_short(video_path, seo_metadata, publish_at=None, thumbnail_path=None)
     Upload video to YouTube with retry logic.
     Works on VPS with pre-generated token (no browser needed).
     """
+    # CRITICAL: Check quota BEFORE expensive upload operation
+    if rate_limiter:
+        try:
+            rate_limiter.check_quota('upload')
+            logging.info(f"[YouTube] Quota check passed - proceeding with upload")
+        except Exception as e:
+            logging.error(f"[YouTube] Quota check failed: {e}")
+            raise
+    
+    # Validate video file exists
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"[YouTube] Video file not found: {video_path}")
+    
+    file_size_mb = os.path.getsize(video_path) / (1024**2)
+    logging.info(f"[YouTube] Uploading video: {os.path.basename(video_path)} ({file_size_mb:.1f}MB)")
+    
     youtube = get_authenticated_service()
     
     if isinstance(seo_metadata, str):
@@ -205,6 +221,7 @@ def upload_short(video_path, seo_metadata, publish_at=None, thumbnail_path=None)
     
     # Retry Logic (Exponential Backoff)
     MAX_RETRIES = 10
+    video_id = None
     for attempt in range(MAX_RETRIES):
         try:
             print(f"[YouTube] Uploading... (Attempt {attempt+1}/{MAX_RETRIES})")
@@ -226,10 +243,21 @@ def upload_short(video_path, seo_metadata, publish_at=None, thumbnail_path=None)
                 raise
         except Exception as e:
             print(f"[YouTube] Network error during upload: {e}")
-            sleep_time = (2 ** attempt) + random.random()
-            time.sleep(sleep_time)
+            if attempt < MAX_RETRIES - 1:
+                sleep_time = (2 ** attempt) + random.random()
+                time.sleep(sleep_time)
+            else:
+                raise
     else:
         raise Exception("[YouTube] Upload failed after max retries")
+    
+    # CRITICAL: Consume quota after successful upload
+    if rate_limiter and video_id:
+        try:
+            rate_limiter.consume('upload')
+            logging.info(f"[YouTube] Quota consumed for upload (video_id: {video_id})")
+        except Exception as e:
+            logging.warning(f"[YouTube] Failed to record quota usage: {e}")
     
     # Upload Thumbnail (Separate API call)
     if thumbnail_path and os.path.exists(thumbnail_path):
@@ -242,8 +270,10 @@ def upload_short(video_path, seo_metadata, publish_at=None, thumbnail_path=None)
             print("[YouTube] Thumbnail uploaded successfully")
         except Exception as e:
             print(f"[YouTube] Thumbnail upload failed: {e}")
+            logging.warning(f"[YouTube] Thumbnail upload failed for {video_id}: {e}")
 
     return video_id
+
 
 
 @retry_with_backoff(max_retries=2)
