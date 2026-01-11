@@ -268,6 +268,9 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
         logging.warning(f"⚠️ Thumbnail validation issues: {validation['issues']}")
         # For production, could regenerate or use fallback
     
+    # Import color function first
+    from services.thumbnail_playbook import validate_thumbnail_production_ready, get_color_combo_recommendation
+    
     # KERALA CTR COLORS - Override with proven Kerala winners
     # Yellow/Red has highest CTR in Kerala market
     if video_type == "short":
