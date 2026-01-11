@@ -1,0 +1,187 @@
+# ============================================================================
+# YOUTUBE CHANNEL CONFIGURATION - FinMindMalayalam
+# ============================================================================
+# This is the SINGLE SOURCE OF TRUTH for your channel settings.
+# To run for a DIFFERENT CHANNEL - just edit this file!
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# CHANNEL IDENTITY
+# ----------------------------------------------------------------------------
+channel:
+  name: "FinMindMalayalam"          # Your channel name
+  handle: "@FinMindMalayalam"        # YouTube @handle
+  language: "ml"                    # Script language (ml=Malayalam)
+  country: "IN"                     # Target country code
+  copyright_year: 2025              # For description footer
+
+# ----------------------------------------------------------------------------
+# CONTENT NICHE - Money, Salary & Real-Life Finance
+# ----------------------------------------------------------------------------
+niche:
+  primary: "Personal Finance & Money Management"
+  description: >
+    Real-life Malayalam finance content: salary management, loan traps, 
+    EMI strategies, credit cards, and practical money tips for common people.
+  
+  # Content Focus Areas
+  content_types:
+    - "Salary Life & Expenses"
+    - "Loan & EMI Strategies"
+    - "Credit Card Management"
+    - "Real Money Traps"
+    - "Savings & Investment Basics"
+    - "Budget Planning"
+  
+  # Topic Examples (for AI reference)
+  example_topics:
+    - "₹50,000 ശമ്പളത്തിൽ എങ്ങനെ ജീവിക്കാം"
+    - "ഇതാണ് പാവങ്ങൾ ചെയ്യുന്ന പിഴവ്"
+    - "EMI trap എന്താണ്"
+    - "Credit card mistakes"
+    - "സാലറി ആദ്യ ദിവസം ചെയ്യേണ്ടത്"
+    - "Personal loan vs Gold loan"
+  
+  # Malayalam Keywords for Finance (used by AI)
+  malayalam_keywords:
+    money: ["പണം", "ശമ്പളം", "സമ്പാദ്യം", "വരുമാനം"]
+    expenses: ["ചെലവ്", "കടം", "ബാധ്യത", "EMI"]
+    mistakes: ["പിഴവ്", "തെറ്റ്", "അപകടം", "കെണി"]
+    savings: ["സേവിംഗ്സ്", "നിക്ഷേപം", "സമ്പാദ്യം"]
+    advice: ["നുറുങ്ങ്", "ഉപദേശം", "രീതി", "പ്ലാൻ"]
+  
+  # Topics to EXCLUDE (safety filters)
+  excluded_topics:
+    - "Get Rich Quick Schemes"
+    - "Cryptocurrency Trading"
+    - "Stock Market Tips"
+    - "MLM/Pyramid Schemes"
+    - "Politics"
+    - "Religion"
+    - "Violence"
+    - "Adult Content"
+    - "Controversy"
+
+# ----------------------------------------------------------------------------
+# CONTENT STYLE & PERSONA
+# ----------------------------------------------------------------------------
+content:
+  # AI Writing Persona - Finance Educator
+  persona: "The Practical Guide"
+  
+  tone:
+    - "Relatable & Real-life focused"
+    - "Warning about traps"
+    - "Empathetic to struggles"
+    - "No-nonsense advice"
+    - "Avoid hype & greed"
+  
+  # Hook Strategies (Finance-specific)
+  hook_types:
+    - "mistake_warning"     # "ഇതാണ് പിഴവ്..."
+    - "real_life_example"   # "₹50,000 ശമ്പളത്തിൽ..."
+    - "trap_revelation"     # "EMI trap എന്താണ്..."
+    - "surprising_fact"     # "90% ആളുകൾ അറിയില്ല..."
+
+# ----------------------------------------------------------------------------
+# VOICE & AUDIO
+# ----------------------------------------------------------------------------
+audio:
+  engine: "edge-tts"
+  voice_id: "ml-IN-MidhunNeural"    # Native Malayalam Neural Voice (Male)
+  # Alternative: "ml-IN-SobhanaNeural" (Female)
+  language_code: "ml-IN"
+  
+  background_music:
+    enabled: true
+    volume: 0.05
+    music_dir: "assets/music"
+
+# ----------------------------------------------------------------------------
+# VISUAL STYLE
+# ----------------------------------------------------------------------------
+visuals:
+  style_preset: "Realistic Finance Visuals"
+  
+  # Finance-specific visual themes
+  themes:
+    salary_life: "Indian middle-class home, office, daily expenses"
+    loans_emi: "Bank documents, worried person, money stress"
+    credit_cards: "Credit card close-up, bills, payment stress"
+    savings: "Piggy bank, family planning, secure future"
+  
+  watermark:
+    text: "@FinMindMalayalam"
+    opacity: 0.3
+    position: "bottom-right"
+  
+  thumbnail:
+    text_color: "yellow"
+    stroke_color: "black"
+    max_words: 5
+    # Finance-specific thumbnail hooks
+    hooks:
+      - "ഇത് അറിയണം!"
+      - "വലിയ പിഴവ്"
+      - "സാലറി ട്രാപ്"
+      - "EMI കെണി"
+      - "നഷ്ടം!"
+
+# ----------------------------------------------------------------------------
+# VIDEO FORMATS
+# ----------------------------------------------------------------------------
+formats:
+  long_form:
+    enabled: true
+    duration_minutes: 6          # Finance: 5-7 min sweet spot
+    aspect_ratio: "16:9"
+    resolution: "1920x1080"
+  
+  shorts:
+    enabled: true
+    count_per_long: 5
+    duration_seconds: 50         # Finance: 45-60s for complete tips
+    aspect_ratio: "9:16"
+    resolution: "1080x1920"
+
+# ----------------------------------------------------------------------------
+# UPLOAD SCHEDULE
+# ----------------------------------------------------------------------------
+schedule:
+  timezone: "Asia/Kolkata"
+  upload_time: "15:30"           # Run early to target evening peak (19:00-21:00 IST)
+  frequency: "daily"
+
+# ----------------------------------------------------------------------------
+# SEO & METADATA
+# ----------------------------------------------------------------------------
+seo:
+  default_tags:
+    - "Malayalam Finance"
+    - "Personal Finance Malayalam"
+    - "Salary Management"
+    - "EMI Tips Malayalam"
+    - "Money Management Kerala"
+    - "Financial Planning Malayalam"
+  
+  description_footer: |
+    
+    💰 അടുത്ത വീഡിയോക്ക് - Subscribe!
+    🔔 Subscribe: @FinMindMalayalam
+    
+    ⚠️ Disclaimer: ഈ വീഡിയോ വിദ്യാഭ്യാസ ആവശ്യത്തിനാണ്. സാമ്പത്തിക തീരുമാനങ്ങൾ എടുക്കുന്നതിന് മുമ്പ് വിദഗ്ധരെ സമീപിക്കുക.
+    
+    © {copyright_year} FinMindMalayalam
+
+# ----------------------------------------------------------------------------
+# MONETIZATION
+# ----------------------------------------------------------------------------
+monetization:
+  made_for_kids: false
+  enable_comments: true
+  safe_search: true
+  
+  # High CPM Niche Settings
+  category: "Education"           # YouTube category
+  target_audience: "Adults 25-45" # Salaried professionals
+  advertiser_friendly: true       # Avoid controversial content
