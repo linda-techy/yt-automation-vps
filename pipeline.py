@@ -564,11 +564,14 @@ def run_unified_pipeline():
         for i, short_script in enumerate(shorts_scripts):
             logging.info(f"  Building Short {i+1}/{len(shorts_scripts)}: {short_script.get('title')}")
             
+            # Calculate scheduled publish time for this short (MUST be before register_video)
+            short_time = get_shorts_publish_time(i, long_publish_time)
+            
             # Voice generation
             s_text = short_script.get('script', '')
             s_voice = generate_voice(s_text, output_path=f"videos/temp/short_{i}.mp3")
             
-            # Audio mixing with unique output path for each short
+           # Audio mixing with unique output path for each short
             s_mix = mix_audio(s_voice, output_path=f"videos/temp/short_{i}_mixed.mp3")
             
             # Assets

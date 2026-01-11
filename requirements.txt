@@ -20,3 +20,4 @@ gtts>=2.5.0
 duckduckgo_search>=4.0.0
 langchain-core>=0.1.0
 imageio>=2.34.0
+psutil>=5.9.0

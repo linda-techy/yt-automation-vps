@@ -59,6 +59,30 @@ def main():
     # Validate environment on startup
     validate_environment()
     
+    # Run health check
+    try:
+        from services.health_monitor import get_health_monitor
+        health = get_health_monitor()
+        results = health.run_full_health_check()
+        
+        if results['overall_healthy']:
+            logging.info("✅ Health check passed - all systems operational")
+        else:
+            logging.warning("⚠️ Health check found issues - check logs/daemon.log")
+            
+            # Log specific issues
+            if not results['disk']['healthy']:
+                logging.error(f"Disk space low: {results['disk']['free_gb']}GB free")
+            if not results['memory']['healthy']:
+                logging.error(f"Memory low: {results['memory']['available_gb']}GB available")
+            if not results['dependencies']['healthy']:
+                missing_deps = [k for k, v in results['dependencies']['dependencies'].items() if not v]
+                logging.error(f"Missing dependencies: {missing_deps}")
+                
+            print("\n⚠️  WARNING: System health check found issues. Check logs for details.\n")
+    except Exception as e:
+        logging.warning(f"Health check failed: {e}")
+    
     # Get schedule from config
     try:
         from services.config_loader import config

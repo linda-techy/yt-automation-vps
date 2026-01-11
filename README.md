@@ -1,192 +1,450 @@
-# YouTube Automation System
+# YouTube Automation System - Production Grade
 
-AI-powered YouTube content automation that generates, produces, and uploads Malayalam tech videos automatically.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: Private](https://img.shields.io/badge/license-Private-red.svg)](LICENSE)
+[![Status: Production](https://img.shields.io/badge/status-Production-green.svg)]()
 
-## Features
-
-- 🤖 **AI Script Generation** - GPT-4o writes engaging Malayalam scripts
-- 🎬 **Hybrid Visuals** - DALL-E 3 for key scenes + Pixabay for B-roll
-- 🎙️ **Natural TTS** - Edge TTS with Malayalam voice (Midhun)
-- 📝 **Whisper Captions** - Accurate Malayalam subtitles
-- 📺 **Auto Upload** - Scheduled YouTube uploads with SEO
-- 🔄 **Format Ecosystem** - 1 Long (10min) + 5 Shorts per topic
+Enterprise-grade AI-powered automated YouTube content creation and upload system for Malayalam tech educational content. Built for reliability, scalability, and minimal human intervention.
 
 ---
 
-## Quick Start
+## 🎯 System Overview
+
+### What It Does
+
+- **Autonomous Content Generation**: AI-generated scripts, voice, visuals, and SEO
+- **Hybrid Video Ecosystem**: 1 Long-form (8-10 min) + 5 Shorts per topic
+- **Smart Scheduling**: Kerala timezone-aware primetime uploads
+- **Quality Assurance**: Multi-stage validation before upload
+- **Self-Healing**: Automatic error recovery and health monitoring
+- **Production-Ready**: Designed for 24/7 VPS operation with PM2
+
+### Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| **AI/ML** | GPT-4o (scripts), DALL-E 3 (visuals), Whisper (transcription) |
+| **TTS** | Edge-TTS (Malayalam Neural Voice) |
+| **Video Processing** | FFmpeg, MoviePy, OpenCV |
+| **Stock Assets** | Pixabay API (free tier) |
+| **YouTube API** | OAuth 2.0, Data API v3 |
+| **Database** | SQLite (quota tracking, lifecycle management) |
+| **Scheduling** | Python schedule + PM2 daemon |
+| **Deployment** | PM2, systemd, Ubuntu 20.04+ |
+
+---
+
+## 📊 System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         PIPELINE ORCHESTRATOR                    │
+│                      (pipeline.py + daemon.py)                   │
+└────────────┬──────────────────────────────────────┬──────────────┘
+             │                                      │
+    ┌────────▼────────┐                    ┌───────▼────────┐
+    │  Content Layer  │                    │  System Layer   │
+    └────────┬────────┘                    └───────┬────────┘
+             │                                      │
+    ┌────────▼────────────────────┐        ┌───────▼──────────────────┐
+    │ Topic Engine (News API)     │        │ Health Monitor           │
+    │ Script Agent (GPT-4o)        │        │ Quota Manager (SQLite)   │
+    │ TTS Engine (Edge-TTS)        │        │ Rate Limiter             │
+    │ Visual Matcher (Semantic)    │        │ Error Recovery           │
+    │ Video Builder (FFmpeg)       │        │ Lifecycle Tracker        │
+    │ SEO Engine (Hashtags)        │        │ Upload Validator         │
+    │ YouTube Uploader (OAuth)     │        │ File Manager             │
+    └─────────────────────────────┘        └──────────────────────────┘
+                  │                                      │
+                  └──────────────┬───────────────────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │  Data Stores    │
+                        ├─────────────────┤
+                        │ quota_tracker.db│
+                        │ video_lifecycle.│
+                        │ upload_history. │
+                        │ script_hashes.  │
+                        │ topic_history.  │
+                        └─────────────────┘
+```
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-| Requirement | Notes |
-|-------------|-------|
-| Python 3.10+ | Required |
-| FFmpeg | Video processing |
-| ImageMagick | Text overlays |
-| OpenAI API Key | GPT-4o, DALL-E 3, Whisper |
-| Pixabay API Key | Stock videos (free) |
-| YouTube OAuth | Upload credentials |
+| Requirement | Version | Purpose |
+|-------------|---------|---------|
+| Python | 3.10+ | Runtime environment |
+| FFmpeg | Latest | Video processing |
+| ImageMagick | Latest | Text overlays (optional) |
+| OpenAI API Key | - | GPT-4, DALL-E, Whisper |
+| YouTube OAuth | - | Upload credentials |
+| VPS (optional) | 2GB+ RAM | Production deployment |
 
-### 1. Clone & Install
+### Installation
 
 ```bash
+# 1. Clone repository
 git clone <your-repo> yt-automation
 cd yt-automation
+
+# 2. Install Python dependencies
 pip install -r requirements.txt
-```
 
-### 2. Configure Environment
+# 3. Install system dependencies (Ubuntu)
+sudo apt update
+sudo apt install -y ffmpeg imagemagick
 
-Create `.env` file:
-```env
-OPENAI_API_KEY=sk-your-key-here
-PIXABAY_API_KEY=your-pixabay-key
-YOUTUBE_CLIENT_SECRET_FILE=client_secret.json
-YOUTUBE_TOKEN_FILE=token.pickle
-```
+# 4. Configure environment
+cp .env.example .env
+# Edit .env with your API keys
 
-### 3. Setup YouTube OAuth
-
-```bash
-# Generate OAuth token (one-time, requires browser)
+# 5. Setup YouTube OAuth (one-time)
 python -c "from services.youtube_uploader import generate_token_headless; generate_token_headless()"
-```
+# Follow browser authorization flow
 
-### 4. Run Pipeline
+# 6. Run health check
+python -c "from services.health_monitor import get_health_monitor; get_health_monitor().run_full_health_check()"
 
-```bash
+# 7. Test pipeline (single run)
 python pipeline.py
 ```
 
 ---
 
-## VPS Deployment (Ubuntu)
+## 🏭 Production Deployment (VPS)
 
-### Step 1: Upload Files to VPS
-```bash
-scp -r . user@your-vps:/home/user/yt-automation/
-```
+### Automated Setup
 
-### Step 2: Run Deploy Script
 ```bash
+# Upload files to VPS
+scp -r . user@vps:/home/user/yt-automation/
+
+# SSH into VPS
+ssh user@vps
+
+# Run deployment script
+cd yt-automation
 chmod +x deploy.sh
 ./deploy.sh
+
+# Copy OAuth credentials from local machine
+# (Run this from your LOCAL machine after OAuth setup)
+scp token.pickle user@vps:/home/user/yt-automation/
 ```
 
-This installs: FFmpeg, ImageMagick, Malayalam fonts, Python deps
+### PM2 Daemon Setup
 
-### Step 3: Copy OAuth Token
 ```bash
-# From local machine (where you ran OAuth)
-scp token.pickle user@your-vps:/home/user/yt-automation/
+# Install PM2 (if not installed)
+npm install -g pm2
+
+# Start daemon (runs 3x/week: Mon, Wed, Fri at 15:30 IST)
+pm2 start daemon.py --name "yt-automation" --interpreter python3
+
+# Save PM2 config
+pm2 save
+
+# Enable auto-restart on server reboot
+pm2 startup
+
+# Monitor logs
+pm2 logs yt-automation
+
+# Check status
+pm2 status
 ```
 
-### Step 4: Setup Cron (Daily Automation)
+### Monitoring & Maintenance
+
 ```bash
-crontab -e
-# Add:
-0 20 * * * cd /home/user/yt-automation && python3 pipeline.py >> logs/cron.log 2>&1
+# View health status
+cat channel/health_status.json | jq
+
+# Check quota usage
+sqlite3 channel/quota_tracker.db "SELECT * FROM quota_usage ORDER BY timestamp DESC LIMIT 10;"
+
+# View error history
+cat channel/error_history.json | jq '.[-5:]'
+
+# Manual cleanup
+python -c "from services.health_monitor import get_recovery_manager; get_recovery_manager().cleanup_stale_files()"
 ```
 
 ---
 
-## Project Structure
+## ⚙️ Configuration
 
-```
-yt-automation/
-├── pipeline.py           # Main entry point
-├── services/
-│   ├── topic_engine.py   # Trending topic discovery
-│   ├── script_agent.py   # AI script generation
-│   ├── tts_engine.py     # Malayalam voice synthesis
-│   ├── bg_generator.py   # Hybrid visuals (AI + Pixabay)
-│   ├── video_builder.py  # Video composition
-│   ├── subtitle_engine.py # Whisper captions
-│   ├── youtube_uploader.py # Upload with OAuth
-│   └── file_manager.py   # Auto cleanup
-├── config/
-│   └── platform.py       # Cross-platform paths
-├── deploy.sh             # Ubuntu setup script
-├── requirements.txt      # Python dependencies
-└── .env                  # API keys (create this)
-```
+### Channel Settings (`channel_config.yaml`)
+
+All channel-specific settings are centralized in `channel_config.yaml`:
+
+- **Channel identity**: Name, handle, language
+- **Content niche**: Topic focus, keywords, exclusions
+- **Voice & audio**: TTS engine, voice ID, BGM settings
+- **Visual style**: Themes, watermarks, thumbnail hooks
+- **Video formats**: Long-form, Shorts settings
+- **Upload schedule**: Timezone, upload times
+- **SEO defaults**: Tags, description footer
+- **Monetization**: Category, audience targeting
+
+**To adapt for a different channel**: Edit `channel_config.yaml` only!
 
 ---
 
-## Monetization Requirements (YPP)
+## 🔧 Troubleshooting
 
-### YouTube Partner Program Thresholds
+### Common Issues
 
-| Requirement | Target |
-|-------------|--------|
-| Subscribers | 1,000 |
-| Watch Hours (Long) | 4,000 hours |
-| OR Shorts Views | 10M views (90 days) |
-
-### How This System Helps
-
-✅ **Original Content** - AI-generated unique scripts  
-✅ **Not Reused** - Heavy visual transformations  
-✅ **Accurate Captions** - Whisper Malayalam transcription  
-✅ **Dual Format** - Long videos for watch time + Shorts for reach  
-✅ **Daily Automation** - Consistent upload schedule  
-
-### Tips for Faster Monetization
-
-1. **Post Daily** - Use cron job for consistency
-2. **Optimize Thumbnails** - AI generates eye-catching thumbnails
-3. **Cross-Promote** - Shorts link to Long videos
-4. **Engage Comments** - Auto-posts pinned comment with links
-
----
-
-## Troubleshooting
-
-### FFmpeg Not Found
+#### FFmpeg Not Found
 ```bash
-# Ubuntu
+# Ubuntu/Debian
 sudo apt install ffmpeg
+
+# macOS
+brew install ffmpeg
 
 # Windows
 winget install ffmpeg
 ```
 
-### ImageMagick Error
+#### YouTube Quota Exceeded
+- Daily quota: 10,000 units (resets midnight PT)
+- Upload cost: 1,600 units (~6 videos/day max)
+- Solution: System tracks quota automatically, waits for reset
+
+#### Whisper Memory Error
 ```bash
-# Ubuntu - fix policy
-sudo sed -i 's/<policy domain="path" rights="none" pattern="@\*"\/>//g' /etc/ImageMagick-6/policy.xml
+# Edit services/subtitle_engine.py
+# Change model size: base -> tiny
+whisper.load_model("tiny")  # Uses less RAM
 ```
 
-### YouTube Quota Exceeded
-- Quota resets at midnight Pacific Time
-- Max 10,000 units/day (6 video uploads)
+#### Upload Failures
+```bash
+# Check logs
+tail -f logs/pipeline.log
+tail -f logs/daemon.log
 
-### Whisper Memory Error
-- Use smaller Whisper model: `whisper.load_model("base")`
-- Or increase VPS RAM
+# Verify credentials
+ls -la token.pickle client_secret.json
 
----
+# Re-authenticate if needed
+rm token.pickle
+python -c "from services.youtube_uploader import generate_token_headless; generate_token_headless()"
+```
 
-## API Keys Setup
-
-### OpenAI
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Create API key
-3. Add to `.env`: `OPENAI_API_KEY=sk-...`
-
-### Pixabay (Free)
-1. Go to [pixabay.com/api/docs](https://pixabay.com/api/docs/)
-2. Sign up and get free API key
-3. Add to `.env`: `PIXABAY_API_KEY=...`
-
-### YouTube OAuth
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create project → Enable YouTube Data API v3
-3. Create OAuth 2.0 credentials (Desktop App)
-4. Download `client_secret.json`
-5. Run token generation (see Quick Start)
+#### Disk Space Issues
+```bash
+# System auto-cleans files >48hrs old
+# Manual cleanup:
+python -c "from services.health_monitor import get_recovery_manager; get_recovery_manager().cleanup_stale_files(max_age_hours=24)"
+```
 
 ---
 
-## License
+## 📈 Monetization (YouTube Partner Program)
 
-Private project. Not for distribution.
+### Requirements
+
+| Requirement | Target | Status |
+|-------------|--------|--------|
+| Subscribers | 1,000 | Track in YouTube Studio |
+| Watch Hours (Long) | 4,000 hours | OR |
+| Shorts Views | 10M (90 days) | Faster path |
+
+### System Features for YPP Compliance
+
+✅ **100% Original Content** - AI-generated unique scripts  
+✅ **Heavy Transformations** - Ken Burns effects, transitions, graphics  
+✅ **Accurate Captions** - Whisper Malayalam transcription  
+✅ **Consistent Schedule** - 3x/week automated uploads  
+✅ **Cross-Promotion** - Shorts → Long video traffic  
+✅ **Engagement** - Pinned comments, questions  
+
+---
+
+## 🏗️ Architecture Deep Dive
+
+### Pipeline Flow
+
+```
+1. TOPIC GENERATION
+   ├─ News API trending finance topics
+   ├─ Topic history deduplication
+   └─ Kerala-relevant filtering
+
+2. SCRIPT CREATION (Long-form)
+   ├─ GPT-4o generates 8-section script
+   ├─ Semantic visual cues extraction
+   ├─ Policy guard (safety check)
+   └─ Uniqueness validation (MD5 + fuzzy)
+
+3. REPURPOSING (5 Shorts)
+   ├─ Extract 5 key subsections
+   ├─ Rewrite for 45-60sec format
+   └─ Generate short-specific thumbnails
+
+4. ASSET GENERATION
+   ├─ TTS: Edge-TTS Malayalam voice
+   ├─ Audio mixing: BGM at 5% volume
+   ├─ Visuals: Pixabay stock videos
+   └─ Thumbnails: AI-generated (early stage)
+
+5. VIDEO PRODUCTION
+   ├─ Chunked rendering (prevents OOM)
+   ├─ Ken Burns effects (anti-static)
+   ├─ Validates: duration, format, size
+   └─ Lifecycle tracking (SQLite)
+
+6. SEO & METADATA
+   ├─ Bilingual (Malayalam + English)
+   ├─ Hashtag generation (trending)
+   ├─ Description templates
+   └─ Validation (length, format)
+
+7. UPLOAD & SCHEDULE
+   ├─ Quota check (persistent tracking)
+   ├─ Upload validation (prevents duplicates)
+   ├─ Kerala primetime scheduling
+   ├─ Cross-promotion comments (pinned)
+   └─ Archive content for analytics
+
+8. CLEANUP & RECOVERY
+   ├─ Conditional cleanup (success-based)
+   ├─ Health monitoring
+   ├─ Error pattern detection
+   └─ Auto-recovery mechanisms
+```
+
+### Database Schema (SQLite)
+
+**quota_tracker.db**
+```sql
+CREATE TABLE quota_usage (
+    id INTEGER PRIMARY KEY,
+    operation TEXT,        -- 'upload', 'comment', etc.
+    cost INTEGER,          -- Quota units consumed
+    timestamp DATETIME,
+    reset_at DATETIME,
+    metadata TEXT
+);
+```
+
+**video_lifecycle.json**
+```json
+{
+  "video_id": "xyz123",
+  "type": "long",
+  "topic": "EMI Trap Malayalam",
+  "status": "uploaded",
+  "scheduled_time": "2025-01-11T19:00:00+05:30",
+  "created_at": "2025-01-11T15:30:00+05:30",
+  "metadata": {...}
+}
+```
+
+---
+
+## 🔒 Security Best Practices
+
+1. **Never commit secrets** - Already configured in `.gitignore`
+2. **Use environment variables** - All credentials in `.env`
+3. **Rotate API keys** - Every 90 days minimum
+4. **Separate dev/prod** - Different API keys per environment
+5. **Monitor quota** - Automated with persistent tracking
+6. **Regular backups** - SQLite databases + config files
+
+---
+
+## 📊 System Metrics & Monitoring
+
+### Health Indicators
+
+```bash
+# Current health status
+cat channel/health_status.json | jq '{
+  healthy: .overall_healthy,
+  disk: .disk.free_gb,
+  memory: .memory.available_gb,
+  dependencies: .dependencies.healthy
+}'
+```
+
+### Quota Dashboard
+
+```bash
+# Weekly quota usage
+sqlite3 channel/quota_tracker.db "
+SELECT DATE(timestamp) as date, SUM(cost) as total_units
+FROM quota_usage
+WHERE timestamp >= datetime('now', '-7 days')
+GROUP BY DATE(timestamp)
+ORDER BY date DESC;
+"
+```
+
+---
+
+## 🛠️ Development
+
+### Running Tests
+
+```bash
+# Test health monitoring
+python services/health_monitor.py
+
+# Test quota manager
+python services/quota_manager.py
+
+# Test rate limiter
+python services/rate_limiter.py
+```
+
+### Adding New Services
+
+1. Create service in `services/your_service.py`
+2. Follow existing patterns (logging, error handling)
+3. Add to imports in `pipeline.py`
+4. Update `channel_config.yaml` if needed
+5. Document in README
+
+---
+
+## 📝 Changelog & Version History
+
+### v2.0.0 - Production Hardening (2026-01-11)
+- ✅ Fixed critical `short_time` undefined variable bug
+- ✅ Added persistent quota tracking (SQLite)
+- ✅ Implemented health monitoring system
+- ✅ Added error recovery mechanisms
+- ✅ Created comprehensive documentation
+- ✅ Improved daemon with health checks
+
+### v1.0.0 - Initial Release
+- Basic pipeline with GPT-4 + Edge-TTS
+- YouTube upload via OAuth
+- Simple scheduling
+
+---
+
+## 📧 Support & Contact
+
+- **Issues**: Check `logs/pipeline.log` and `logs/daemon.log`
+- **Health Status**: `channel/health_status.json`
+- **Error History**: `channel/error_history.json`
+
+---
+
+## ⚖️ License
+
+**Private Project** - Not for public distribution
+
+## © Copyright
+
+© 2026 FinMindMalayalam  
+All rights reserved.
+

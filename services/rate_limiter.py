@@ -15,11 +15,26 @@ import logging
 from functools import wraps
 from datetime import datetime, timedelta
 
+
+# Use persistent quota manager instead of in-memory tracking
+try:
+    from services.quota_manager import get_quota_manager, QuotaExceededError as PersistentQuotaError
+    persistent_quota = get_quota_manager()
+    USE_PERSISTENT_QUOTA = True
+    logging.info("[RateLimiter] Using persistent quota tracking (SQLite)")
+except ImportError:
+    persistent_quota = None
+    USE_PERSISTENT_QUOTA = False
+    logging.warning("[RateLimiter] Persistent quota manager not available, using fallback")
+
+
 class YouTubeRateLimiter:
     def __init__(self, daily_quota=10000):
         self.daily_quota = daily_quota
-        self.used_quota = 0
-        self.reset_time = datetime.now() + timedelta(days=1)
+        if not USE_PERSISTENT_QUOTA:
+            # Fallback to in-memory (not recommended for production)
+            self.used_quota = 0
+            self.reset_time = datetime.now() + timedelta(days=1)
         self.quota_costs = {
             'upload': 1600,
             'comment': 50,
@@ -29,6 +44,13 @@ class YouTubeRateLimiter:
     
     def check_quota(self, operation='upload'):
         """Check if operation would exceed quota"""
+        if USE_PERSISTENT_QUOTA:
+            try:
+                return persistent_quota.check_available(operation, self.daily_quota)
+            except PersistentQuotaError as e:
+                raise QuotaExceededError(str(e))
+        
+        # Fallback logic (in-memory)
         cost = self.quota_costs.get(operation, 1)
         
         # Reset if new day
@@ -50,8 +72,13 @@ class YouTubeRateLimiter:
     def consume(self, operation='upload'):
         """Consume quota for an operation"""
         cost = self.quota_costs.get(operation, 1)
-        self.used_quota += cost
-        logging.info(f"[Rate Limiter] Used {cost} quota ({self.used_quota}/{self.daily_quota})")
+        
+        if USE_PERSISTENT_QUOTA:
+            persistent_quota.record_usage(operation, cost)
+        else:
+            # Fallback
+            self.used_quota += cost
+            logging.info(f"[Rate Limiter] Used {cost} quota ({self.used_quota}/{self.daily_quota})")
 
 
 class QuotaExceededError(Exception):
@@ -61,6 +88,8 @@ class QuotaExceededError(Exception):
 
 # Global rate limiter instance
 rate_limiter = YouTubeRateLimiter()
+
+
 
 
 def retry_with_backoff(max_retries=3, backoff_factor=2):
