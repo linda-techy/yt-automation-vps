@@ -395,8 +395,6 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
     # Resize to exact dimensions (DALL-E might return 1792x1024, we need 1920x1080)
     if image.size != dimensions:
         image = image.resize(dimensions, Image.Resampling.LANCZOS)
-    else:
-        image = ImageOps.fit(image, dimensions, method=Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(image)
     
     # Get Malayalam headline with CTR psychology (100% correct, no AI)
@@ -464,7 +462,7 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
         text = "നോക്ക്!" if video_type == "short" else "നോക്ക് ഇത്!"
     
     # Render text overlay
-    render_text_overlay(image, text, video_type, font_path, font_size, text_color, stroke_color)(image, text, video_type, font_path, font_size, text_color, stroke_color)
+    render_text_overlay(image, text, video_type, font_path, font_size, text_color, stroke_color)
     
     # Apply professional effects
     image = apply_professional_effects(image)
