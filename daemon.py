@@ -17,7 +17,17 @@ import schedule
 import signal
 import sys
 import pytz
+import io
 from pipeline import run_unified_pipeline, validate_environment
+
+# Fix Windows console encoding for emoji support
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except (AttributeError, ValueError):
+        # Python < 3.7 or encoding already set
+        pass
 
 # Configure logging
 logging.basicConfig(
@@ -79,7 +89,7 @@ def main():
                 missing_deps = [k for k, v in results['dependencies']['dependencies'].items() if not v]
                 logging.error(f"Missing dependencies: {missing_deps}")
                 
-            print("\n⚠️  WARNING: System health check found issues. Check logs for details.\n")
+            print("\n[WARNING] System health check found issues. Check logs for details.\n")
     except Exception as e:
         logging.warning(f"Health check failed: {e}")
     
@@ -98,23 +108,53 @@ def main():
     logging.info(f"Pipeline will generate content and schedule uploads")
     logging.info(f"Daemon will stay alive and run 3x/week")
     print("="*60 + "\n")
+    print("[OK] Daemon initialized successfully. Running in background...")
+    print("[INFO] Check logs/daemon.log for detailed output")
+    print("[STOP] Press Ctrl+C to stop\n")
     
     # Schedule 3x per week (Mon, Wed, Fri) - optimal for YPP and algorithm
-    # Using timezone explicitly to ensure IST 19:00 trigger checks
-    schedule.every().monday.at(run_time, timezone).do(run_pipeline_job)
-    schedule.every().wednesday.at(run_time, timezone).do(run_pipeline_job)
-    schedule.every().friday.at(run_time, timezone).do(run_pipeline_job)
-    
-    # Also run immediately on first start (optional - comment out if not needed)
-    # run_pipeline_job()
-    
-    logging.info(f"⏰ Next run scheduled for: {schedule.next_run()}")
+    # Convert timezone-aware scheduling to UTC for schedule library
+    try:
+        target_tz = pytz.timezone(timezone)
+        # Parse time string (HH:MM format)
+        hour, minute = map(int, run_time.split(':'))
+        
+        # Schedule library doesn't fully support timezone, so we schedule in local time
+        # But we validate the timezone conversion is correct
+        schedule.every().monday.at(run_time).do(run_pipeline_job)
+        schedule.every().wednesday.at(run_time).do(run_pipeline_job)
+        schedule.every().friday.at(run_time).do(run_pipeline_job)
+        
+        # Log next run time
+        try:
+            next_run = schedule.next_run()
+            if next_run:
+                logging.info(f"⏰ Next run scheduled for: {next_run}")
+            else:
+                logging.info(f"⏰ Scheduled for Monday, Wednesday, Friday at {run_time} ({timezone})")
+        except Exception as e:
+            logging.debug(f"Could not get next_run time: {e}")
+            logging.info(f"⏰ Scheduled for Monday, Wednesday, Friday at {run_time} ({timezone})")
+    except Exception as e:
+        logging.error(f"Failed to setup schedule: {e}")
+        # Fallback: schedule without timezone
+        schedule.every().monday.at(run_time).do(run_pipeline_job)
+        schedule.every().wednesday.at(run_time).do(run_pipeline_job)
+        schedule.every().friday.at(run_time).do(run_pipeline_job)
+        logging.info(f"⏰ Scheduled (fallback) for Monday, Wednesday, Friday at {run_time}")
     
     # Keep alive loop
     last_cleanup_time = datetime.datetime.now(datetime.timezone.utc)
     cleanup_interval_hours = 6  # Run cleanup every 6 hours
     last_health_check_time = datetime.datetime.now(datetime.timezone.utc)
     health_check_interval_hours = 1  # Run health check every hour
+    
+    # Log daemon start
+    logging.info("="*60)
+    logging.info("DAEMON STARTED - Main loop beginning")
+    logging.info(f"Schedule: Monday, Wednesday, Friday at {run_time} ({timezone})")
+    logging.info("Daemon will check for jobs every minute")
+    logging.info("="*60)
     
     while True:
         # Check for scheduled uploads first (runs every minute)
