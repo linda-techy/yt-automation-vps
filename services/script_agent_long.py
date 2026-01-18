@@ -98,11 +98,13 @@ class DocumentaryState(TypedDict):
 
 
 # ============================================================================
-# LLM SETUP
+# LLM SETUP - Using wrapped LLM with error handling
 # ============================================================================
-llm_analyst = ChatOpenAI(model="gpt-4o-mini", temperature=0.4)
-llm_storyteller = ChatOpenAI(model="gpt-4o", temperature=0.85)
-llm_editor = ChatOpenAI(model="gpt-4o", temperature=0.3)
+from adapters.openai.llm_wrapper import get_llm_analyst, get_llm_storyteller, get_llm_editor
+
+llm_analyst = get_llm_analyst()
+llm_storyteller = get_llm_storyteller()
+llm_editor = get_llm_editor()
 
 
 # ============================================================================
@@ -110,98 +112,21 @@ llm_editor = ChatOpenAI(model="gpt-4o", temperature=0.3)
 # ============================================================================
 
 def get_perceive_prompt(topic: str, ctx: dict) -> str:
-    return f"""You are the DEEP PERCEPTION module for a {ctx['niche']} documentary channel.
-Analyze this topic with the depth of an investigative journalist.
-
-CHANNEL: {ctx['channel_name']}
-NICHE: {ctx['niche']}
-TARGET: Viewers interested in {ctx['niche']} in {ctx['country']}
-
-TOPIC: {topic}
-
-Return JSON:
-{{
-    "core_thesis": "The central argument or revelation of this documentary",
-    "why_now": "Why is this topic urgent/relevant in 2024-2025?",
-    "target_viewer": "Specific person who NEEDS to see this",
-    "emotional_journey": {{
-        "start": "How viewer feels at start",
-        "middle": "The 'aha moment' emotion",
-        "end": "How they should feel leaving"
-    }},
-    "controversy": "Any debate or surprising angle?",
-    "transformation": "What will viewer understand that they didn't before?"
-}}"""
+    """Get perception prompt using registry"""
+    return registry.get_long_perceive_prompt(topic)
 
 
 def get_research_prompt(perception: dict, topic: str, ctx: dict) -> str:
-    return f"""You are the RESEARCH module for a {ctx['niche']} documentary.
-Gather comprehensive information for a 10-minute deep-dive.
-
-TOPIC: {topic}
-PERCEPTION: {json.dumps(perception)}
-
-Return JSON with AUTHORITATIVE content:
-{{
-    "timeline": [
-        {{"year": "2020", "event": "Key milestone"}},
-        {{"year": "2024", "event": "Recent development"}}
-    ],
-    "key_statistics": ["Stat 1 with source", "Stat 2"],
-    "expert_perspectives": [
-        {{"expert": "Name/Title", "quote": "What they said", "context": "Why it matters"}}
-    ],
-    "case_studies": [
-        {{"name": "Real example", "story": "What happened", "lesson": "What we learn"}}
-    ],
-    "common_myths": [
-        {{"myth": "What people believe", "reality": "The truth"}}
-    ],
-    "predictions": [{{"timeframe": "2025", "prediction": "What experts expect"}}]
-}}"""
+    """Get research prompt with compressed context"""
+    perception_summary = compressor.compress_dict(perception, max_length=150)
+    return registry.get_long_research_prompt(perception_summary, topic)
 
 
 def get_structure_prompt(perception: dict, research: dict, ctx: dict) -> str:
-    return f"""You are the NARRATIVE ARCHITECT for {ctx['channel_name']}.
-Design the story structure for a 5-6 minute {ctx['niche']} documentary.
-
-PERCEPTION: {json.dumps(perception)}
-RESEARCH: {json.dumps(research)}
-
-Create a 5-section structure (CONCISE, NO PADDING):
-
-Return JSON:
-{{
-    "sections": [
-        {{
-            "name": "HOOK",
-            "duration": "0:00-0:30",
-            "purpose": "Create immediate tension/curiosity",
-            "key_element": "Specific hook technique"
-        }},
-        {{
-            "name": "INTRO + CONTEXT",
-            "duration": "0:30-1:30",
-            "purpose": "Establish stakes and background"
-        }},
-        {{
-            "name": "CORE VALUE",
-            "duration": "1:30-4:00",
-            "purpose": "Main content, insights, revelations"
-        }},
-        {{
-            "name": "IMPLICATIONS",
-            "duration": "4:00-5:00",
-            "purpose": "What this means for viewer"
-        }},
-        {{
-            "name": "OUTRO + CTA",
-            "duration": "5:00-6:00",
-            "purpose": "Summarize + inspire action"
-        }}
-    ],
-    "narrative_thread": "The single question driving the documentary"
-}}"""
+    """Get structure prompt with compressed context"""
+    perception_summary = compressor.compress_dict(perception, max_length=150)
+    research_summary = compressor.compress_dict(research, max_length=200)
+    return registry.get_long_structure_prompt(perception_summary, research_summary)
 
 
 def get_section_prompt(section_info: dict, research: dict, perception: dict, 
@@ -239,26 +164,16 @@ Return JSON:
 
 
 def get_assemble_prompt(sections: list, perception: dict, ctx: dict) -> str:
-    return f"""You are the ASSEMBLY module for {ctx['channel_name']}.
-Combine all sections into a cohesive {ctx['niche']} documentary.
-
-SECTIONS: {json.dumps(sections, ensure_ascii=False)}
-PERCEPTION: {json.dumps(perception)}
-
-Create the final package:
-
-Return JSON:
-{{
-    "title": "SEO-Optimized {ctx['language_name']} Title",
-    "description": "YouTube description with keywords",
-    "sections": [all section objects],
-    "thumbnail_text": "3-4 Word Punchline",
-    "tags": ["relevant", "search", "terms"],
-    "total_duration": "~10 minutes"
-}}"""
+    """Get assemble prompt with compressed context"""
+    sections_summary = compressor.compress_structure({"sections": sections})
+    perception_summary = compressor.compress_dict(perception, max_length=100)
+    return registry.get_long_assemble_prompt(sections_summary, perception_summary)
 
 
 def get_critique_prompt(script: dict, ctx: dict) -> str:
+    """Get critique prompt with compressed context"""
+    script_summary = compressor.compress_dict(script, max_length=200)
+    return registry.get_long_critique_prompt(script_summary)
     return f"""You are the QUALITY CONTROL module for {ctx['channel_name']}.
 Evaluate this {ctx['niche']} documentary for a {ctx['language_name']} audience.
 
@@ -306,16 +221,25 @@ def perceive_long_node(state: DocumentaryState) -> dict:
 
 
 def research_long_node(state: DocumentaryState) -> dict:
+    """Research node with compressed context"""
+    from utils.logging.tracer import tracer
+    
     ctx = get_channel_context()
     prompt = get_research_prompt(state["perception"], state["topic"], ctx)
-    response = llm_analyst.invoke([HumanMessage(content=prompt)])
     
     try:
+        response = llm_analyst.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         research = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[DocBrain] Research parsing failed: {e}, using fallback")
         research = {"key_statistics": [], "case_studies": []}
     
     print(f"[DocBrain] Researched: {len(research.get('key_statistics', []))} stats")
@@ -323,16 +247,25 @@ def research_long_node(state: DocumentaryState) -> dict:
 
 
 def structure_node(state: DocumentaryState) -> dict:
+    """Structure node with compressed context"""
+    from utils.logging.tracer import tracer
+    
     ctx = get_channel_context()
     prompt = get_structure_prompt(state["perception"], state["research"], ctx)
-    response = llm_analyst.invoke([HumanMessage(content=prompt)])
     
     try:
+        response = llm_analyst.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         structure = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[DocBrain] Structure parsing failed: {e}, using fallback")
         structure = {"sections": [{"name": "HOOK"}, {"name": "INTRO"}, 
                                    {"name": "PART 1"}, {"name": "PART 2"}, 
                                    {"name": "PART 3"}, {"name": "OUTRO"}]}
@@ -354,16 +287,29 @@ def draft_sections_node(state: DocumentaryState) -> dict:
     for i, section_plan in enumerate(section_plans[:5]):  # 5 sections for 5-6 min
         target_words = word_targets[i] if i < len(word_targets) else 200
         
+        from utils.logging.tracer import tracer
+        from utils.prompts.compressor import compressor
+        
+        # Compress research and perception before sending
+        research_summary = compressor.compress_dict(state["research"], max_length=200)
+        perception_summary = compressor.compress_dict(state["perception"], max_length=150)
+        
         prompt = get_section_prompt(section_plan, state["research"], 
                                     state["perception"], target_words, ctx)
-        response = llm_storyteller.invoke([HumanMessage(content=prompt)])
         
         try:
+            response = llm_storyteller.invoke(
+                [HumanMessage(content=prompt)],
+                trace_id=tracer.get_trace_id(),
+                compress_context=True
+            )
+            
             content = response.content
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
             section = json.loads(content)
-        except:
+        except Exception as e:
+            logging.warning(f"[DocBrain] Section parsing failed: {e}, using fallback")
             section = {"header": section_plan.get("name", "Section"), 
                       "content": "", "visual_cues": []}
         
@@ -375,16 +321,28 @@ def draft_sections_node(state: DocumentaryState) -> dict:
 
 
 def assemble_node(state: DocumentaryState) -> dict:
+    """Assemble node with compressed context"""
+    from utils.logging.tracer import tracer
+    from utils.prompts.compressor import compressor
+    
     ctx = get_channel_context()
+    # Compress sections before sending
+    structure_summary = compressor.compress_structure({"sections": state["sections"]})
     prompt = get_assemble_prompt(state["sections"], state["perception"], ctx)
-    response = llm_editor.invoke([HumanMessage(content=prompt)])
     
     try:
+        response = llm_editor.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         draft = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[DocBrain] Assemble parsing failed: {e}, using fallback")
         draft = {"title": state["topic"], "sections": state["sections"]}
     
     total_words = sum(s.get("word_count", len(s.get("content", "").split())) 
@@ -397,16 +355,28 @@ def assemble_node(state: DocumentaryState) -> dict:
 
 
 def critique_long_node(state: DocumentaryState) -> dict:
+    """Critique node with compressed context"""
+    from utils.logging.tracer import tracer
+    from utils.prompts.compressor import compressor
+    
     ctx = get_channel_context()
+    # Compress draft before sending
+    draft_summary = compressor.compress_dict(state["draft"], max_length=200)
     prompt = get_critique_prompt(state["draft"], ctx)
-    response = llm_editor.invoke([HumanMessage(content=prompt)])
     
     try:
+        response = llm_editor.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         critique = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[DocBrain] Critique parsing failed: {e}, using fallback")
         critique = {"overall_score": 8.0, "verdict": "APPROVED"}
     
     print(f"[DocBrain] Critiqued: {critique.get('overall_score', 0)}/10")

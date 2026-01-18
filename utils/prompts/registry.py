@@ -104,6 +104,11 @@ class PromptRegistry:
         """Compact critique prompt"""
         return f"CRITIQUE_MODULE|TOPIC:{topic}|DRAFT:{draft_summary}\nJSON:{{score,issues,improvements}}"
     
+    @classmethod
+    def get_refine_prompt(cls, draft_summary: str, critique_summary: str, priority: str) -> str:
+        """Compact refine prompt"""
+        return f"REFINE_MODULE|PRIORITY:{priority}|DRAFT:{draft_summary}|CRITIQUE:{critique_summary}\nJSON:{{title,script,visual_cues,on_screen_text,comment_question,thumbnail_text}}"
+    
     # Long-form prompts (documentary style)
     @classmethod
     def get_long_perceive_prompt(cls, topic: str) -> str:
@@ -144,6 +149,25 @@ class PromptRegistry:
         ctx = cls.get_channel_context()
         lang_name = ctx['language_name']
         return f"REPURPOSE_MODULE|LANG:{lang_name}\nEXTRACT:5_SHORTS|STRUCTURE:HOOK(5s)|VALUE(40s)|CTA(5s)|CURIOSITY_LOOP\nJSON:[{{title,script,visual_cues,thumbnail_text}}]"
+    
+    # Additional prompts for long-form
+    @classmethod
+    def get_long_section_prompt(cls, section_info_summary: str, research_summary: str, 
+                                 perception_summary: str, target_words: int) -> str:
+        """Long-form section prompt with compressed context"""
+        ctx = cls.get_channel_context()
+        lang_rules = cls.get_language_rules(ctx['language'])
+        return f"DOC_SECTION|LANG:{lang_rules}|SECTION:{section_info_summary}|R:{research_summary}|P:{perception_summary}|WORDS:{target_words}\nJSON:{{header,content,visual_cues:[8-10items],on_screen_text,word_count}}"
+    
+    @classmethod
+    def get_long_assemble_prompt(cls, sections_summary: str, perception_summary: str) -> str:
+        """Long-form assemble prompt"""
+        return f"DOC_ASSEMBLE|SECTIONS:{sections_summary}|P:{perception_summary}\nJSON:{{title,description,sections,thumbnail_text,tags,total_duration}}"
+    
+    @classmethod
+    def get_long_critique_prompt(cls, draft_summary: str) -> str:
+        """Long-form critique prompt"""
+        return f"DOC_CRITIQUE|DRAFT:{draft_summary}\nJSON:{{overall_score,weakest_section,verdict,revision_priority}}"
 
 
 # Global registry instance

@@ -1,55 +1,52 @@
 import json
-from langchain_openai import ChatOpenAI
+import logging
 from langchain_core.messages import HumanMessage
 
-llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
+# Use wrapped LLM with error handling
+from adapters.openai.llm_wrapper import get_llm_creative
+from utils.prompts.registry import registry
+from utils.prompts.compressor import compressor
+from utils.logging.tracer import tracer
 
-REPURPOSER_PROMPT = """You are a Viral Content Strategist.
-I will provide you with a Long-Form Video Script (8-10 mins).
-Your Goal: Extract 5 DISTINCT, SELF-CONTAINED YouTube Shorts scripts from this content.
+llm = get_llm_creative()
 
-SOURCE SCRIPT:
-{long_script}
-
-REQUIREMENTS:
-1. **5 Independent Scripts**: Each must make sense alone.
-2. **Standard Shorts Structure**: Hook (0-5s) -> Value (15-40s) -> CTA (45-50s).
-3. **Curiosity Loop**: End each short with "Watch the full video to learn X".
-4. **Malayalam Script**: Use the exact same style (Malayalam Unicode + "A.I." dots).
-5. **No Duplicates**: Each short must cover a different angle (e.g., Short 1: The Problem, Short 2: The Solution, Short 3: The Case Study...).
-
-FORMAT (JSON List):
-[
-  {{
-    "title": "Shorts Title 1",
-    "script": "Full Malayalam Script...",
-    "visual_cues": ["..."],
-    "thumbnail_text": "..."
-  }},
-  ... (5 times)
-]
-"""
 
 def repurpose_long_script(long_script_json):
     """
     Takes the JSON output from generate_long_script and derives 5 Shorts.
+    Uses prompt registry and context compression for token optimization.
     """
-    # Convert long script json to string for context
-    long_script_str = json.dumps(long_script_json, ensure_ascii=False)
+    # Compress long script before sending (reduce token usage)
+    script_summary = compressor.compress_dict(long_script_json, max_length=500)
     
-    msg = HumanMessage(content=REPURPOSER_PROMPT.format(long_script=long_script_str))
-    response = llm.invoke([msg])
+    # Use prompt registry
+    prompt = registry.get_repurpose_prompt()
+    # Add compressed script to prompt
+    full_prompt = f"{prompt}\nSOURCE_SCRIPT:{script_summary}"
     
     try:
+        msg = HumanMessage(content=full_prompt)
+        response = llm.invoke(
+            [msg],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content.strip()
         if "```json" in content:
             content = content.replace("```json", "").replace("```", "")
             
         shorts_list = json.loads(content)
+        
+        if not isinstance(shorts_list, list):
+            logging.warning("[Repurposer] Response not a list, attempting to fix")
+            shorts_list = [shorts_list] if shorts_list else []
+        
         return shorts_list
     except Exception as e:
-        print(f"Repurposing failed: {e}")
+        logging.error(f"[Repurposer] Repurposing failed: {e}")
         return []
+
 
 if __name__ == "__main__":
     # Mock input for testing

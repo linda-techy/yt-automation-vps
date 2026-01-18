@@ -16,7 +16,6 @@ import os
 import json
 from typing import TypedDict, List, Optional
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # Import channel configuration
@@ -115,164 +114,59 @@ class CognitiveState(TypedDict):
 
 
 # ============================================================================
-# LLM SETUP
+# LLM SETUP - Using wrapped LLM with error handling
 # ============================================================================
-llm_fast = ChatOpenAI(model="gpt-4o-mini", temperature=0.5)
-llm_creative = ChatOpenAI(model="gpt-4o", temperature=0.8)
-llm_precise = ChatOpenAI(model="gpt-4o", temperature=0.3)
+from adapters.openai.llm_wrapper import get_llm_fast, get_llm_creative, get_llm_precise
+
+llm_fast = get_llm_fast()
+llm_creative = get_llm_creative()
+llm_precise = get_llm_precise()
 
 
 # ============================================================================
-# DYNAMIC PROMPT GENERATORS
+# PROMPT GENERATORS - Using Prompt Registry and Context Compression
 # ============================================================================
+from utils.prompts.registry import registry
+from utils.prompts.compressor import compressor
 
 def get_perceive_prompt(topic: str, ctx: dict) -> str:
-    return f"""You are the PERCEPTION module of a content brain for a {ctx['niche']} YouTube channel.
-Your job: Deeply understand what this topic means and why people care.
-
-CHANNEL: {ctx['channel_name']}
-NICHE: {ctx['niche']}
-TARGET AUDIENCE: Viewers interested in {ctx['niche']} in {ctx['country']}
-
-TOPIC: {topic}
-
-Analyze and return JSON:
-{{
-    "core_concept": "One sentence: What is this topic really about?",
-    "emotional_hook": "What emotion will grab viewers? (curiosity/fear/excitement/hope)",
-    "target_audience": "Who specifically cares about this? Be specific.",
-    "current_relevance": "Why does this matter RIGHT NOW?",
-    "controversy_angle": "Is there a debate or surprise here?",
-    "transformation_promise": "What will viewers learn/gain?"
-}}"""
+    """Get perception prompt using registry"""
+    return registry.get_perceive_prompt(topic)
 
 
 def get_research_prompt(perception: dict, ctx: dict) -> str:
-    return f"""You are the KNOWLEDGE RETRIEVAL module for a {ctx['niche']} content channel.
-Based on this perception, gather relevant facts and angles.
-
-PERCEPTION: {json.dumps(perception)}
-
-Return JSON with knowledge that would make this script AUTHORITATIVE:
-{{
-    "key_facts": ["Fact 1 with numbers/dates", "Fact 2", "Fact 3"],
-    "expert_quotes": ["Quote that adds credibility"],
-    "common_misconceptions": ["What most people get wrong"],
-    "surprising_angle": "Something unexpected about this topic",
-    "story_elements": ["Real example or case study"],
-    "data_points": ["Statistics that shock or convince"]
-}}"""
+    """Get research prompt with compressed context"""
+    # Compress perception before sending
+    perception_summary = compressor.compress_perception(perception)
+    return registry.get_research_prompt(perception_summary)
 
 
 def get_ideate_prompt(perception: dict, research: dict, ctx: dict) -> str:
-    return f"""You are the CREATIVE IDEATION module for a {ctx['niche']} YouTube Short.
-
-CHANNEL: {ctx['channel_name']}
-LANGUAGE: {ctx['language_name']}
-PERSONA: {ctx['persona']}
-
-PERCEPTION: {json.dumps(perception)}
-RESEARCH: {json.dumps(research)}
-
-For a 60-second YouTube Short, generate 3 different creative approaches:
-
-Return JSON:
-{{
-    "angles": [
-        {{
-            "hook_style": "Question/Contrast/Story/Revelation",
-            "opening_line": "First 5 seconds in {ctx['language_name']}",
-            "emotional_arc": "Start emotion → End emotion",
-            "unique_value": "Why this approach works"
-        }}
-    ],
-    "recommended_angle": 0,
-    "reasoning": "Why this angle is best for engagement"
-}}"""
+    """Get ideation prompt with compressed context"""
+    perception_summary = compressor.compress_perception(perception)
+    research_summary = compressor.compress_research(research)
+    return registry.get_ideate_prompt(perception_summary, research_summary)
 
 
 def get_draft_prompt(perception: dict, research: dict, angle: dict, ctx: dict) -> str:
-    language_rules = get_script_language_rules(ctx['language'])
-    
-    return f"""You are the SCRIPTWRITING module for {ctx['channel_name']}.
-
-CHANNEL IDENTITY:
-- Name: {ctx['channel_name']}
-- Niche: {ctx['niche']}
-- Language: {ctx['language_name']}
-- Persona: {ctx['persona']}
-
-PERCEPTION: {json.dumps(perception)}
-RESEARCH: {json.dumps(research)}
-CREATIVE ANGLE: {json.dumps(angle)}
-
-{language_rules}
-
-SCRIPT STRUCTURE (50-70 words, 8-10 sentences):
-- Sentence 1-2: HOOK (matches creative angle)
-- Sentence 3-4: CONTEXT (why this matters)
-- Sentence 5-6: CORE VALUE (the insight)
-- Sentence 7-8: PROOF/EXAMPLE
-- Sentence 9-10: CTA + THOUGHT-PROVOKER
-
-Return JSON:
-{{
-    "title": "Catchy title in {ctx['language_name']}",
-    "script": "Full script in {ctx['language_name']}",
-    "visual_cues": ["Specific", "Searchable", "Terms", "For", "Each", "Scene"],
-    "on_screen_text": ["Key phrase 1", "Key phrase 2"],
-    "comment_question": "Engaging question in {ctx['language_name']}",
-    "thumbnail_text": "2-3 Words maximum"
-}}"""
+    """Get draft prompt with compressed context"""
+    perception_summary = compressor.compress_perception(perception)
+    research_summary = compressor.compress_research(research)
+    angle_summary = compressor.compress_angle(angle)
+    return registry.get_draft_prompt(perception_summary, research_summary, angle_summary)
 
 
 def get_critique_prompt(draft: dict, topic: str, ctx: dict) -> str:
-    return f"""You are the QUALITY CONTROL module for {ctx['channel_name']}.
-Evaluate this {ctx['niche']} script for a {ctx['language_name']} audience.
-
-SCRIPT: {json.dumps(draft, ensure_ascii=False)}
-ORIGINAL TOPIC: {topic}
-
-Score each dimension (1-10):
-
-Return JSON:
-{{
-    "scores": {{
-        "hook_power": 8,
-        "information_density": 7,
-        "emotional_resonance": 9,
-        "clarity": 8,
-        "call_to_action": 7,
-        "monetization_safe": 10
-    }},
-    "overall_score": 8.2,
-    "critical_issues": ["Issue 1 if any"],
-    "improvement_suggestions": ["Specific actionable improvement"],
-    "verdict": "APPROVED" or "NEEDS_REVISION",
-    "revision_priority": "Which issue to fix first if revising"
-}}"""
+    """Get critique prompt with compressed context"""
+    draft_summary = compressor.compress_dict(draft, max_length=200)
+    return registry.get_critique_prompt(draft_summary, topic)
 
 
 def get_refine_prompt(draft: dict, critique: str, priority: str, ctx: dict) -> str:
-    language_rules = get_script_language_rules(ctx['language'])
-    
-    return f"""You are the REFINEMENT module for {ctx['channel_name']}.
-Improve the script based on critique feedback.
-
-CURRENT SCRIPT: {json.dumps(draft, ensure_ascii=False)}
-CRITIQUE: {critique}
-PRIORITY FIX: {priority}
-
-{language_rules}
-
-Make targeted improvements while preserving what works.
-Return the improved script in the same JSON format.
-
-RULES:
-- Fix only the identified issues
-- Keep the script in {ctx['language_name']}
-- Maintain or improve hook power
-- Keep it 50-70 words"""
+    """Get refine prompt with compressed context"""
+    draft_summary = compressor.compress_dict(draft, max_length=200)
+    critique_summary = compressor.compress_json_safely(critique, max_chars=100)
+    return registry.get_refine_prompt(draft_summary, critique_summary, priority)
 
 
 # ============================================================================
@@ -297,16 +191,25 @@ def perceive_node(state: CognitiveState) -> dict:
 
 
 def research_node(state: CognitiveState) -> dict:
+    """Research node with compressed context"""
+    from utils.logging.tracer import tracer
+    
     ctx = get_channel_context()
     prompt = get_research_prompt(state["perception"], ctx)
-    response = llm_fast.invoke([HumanMessage(content=prompt)])
     
     try:
+        response = llm_fast.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content.strip()
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         research = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[Brain] Research parsing failed: {e}, using fallback")
         research = {"key_facts": [], "surprising_angle": ""}
     
     print(f"[Brain] Researched: {len(research.get('key_facts', []))} facts")
@@ -314,16 +217,25 @@ def research_node(state: CognitiveState) -> dict:
 
 
 def ideate_node(state: CognitiveState) -> dict:
+    """Ideation node with compressed context"""
+    from utils.logging.tracer import tracer
+    
     ctx = get_channel_context()
     prompt = get_ideate_prompt(state["perception"], state["research"], ctx)
-    response = llm_creative.invoke([HumanMessage(content=prompt)])
     
     try:
+        response = llm_creative.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content.strip()
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         ideas = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[Brain] Ideation parsing failed: {e}, using fallback")
         ideas = {"angles": [{"hook_style": "Question"}], "recommended_angle": 0}
     
     print(f"[Brain] Ideated: {len(ideas.get('angles', []))} angles")
@@ -331,38 +243,62 @@ def ideate_node(state: CognitiveState) -> dict:
 
 
 def draft_node(state: CognitiveState) -> dict:
+    """Draft node with compressed context"""
+    from utils.logging.tracer import tracer
+    
     ctx = get_channel_context()
     angles = state.get("ideas", [{}])
     chosen_angle = angles[0] if angles else {}
     
     prompt = get_draft_prompt(state["perception"], state["research"], chosen_angle, ctx)
-    response = llm_creative.invoke([HumanMessage(content=prompt)])
     
     try:
+        response = llm_creative.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content.strip()
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         draft = json.loads(content)
     except Exception as e:
-        draft = {"script": response.content, "visual_cues": [], "error": str(e)}
+        logging.warning(f"[Brain] Draft parsing failed: {e}")
+        try:
+            draft = {"script": response.content, "visual_cues": [], "error": str(e)}
+        except:
+            draft = {"script": "", "visual_cues": [], "error": str(e)}
     
     print(f"[Brain] Drafted: '{draft.get('title', 'Untitled')[:40]}...'")
     return {"draft": draft, "iteration_count": state.get("iteration_count", 0) + 1}
 
 
 def critique_node(state: CognitiveState) -> dict:
+    """Critique node with compressed context"""
+    from utils.logging.tracer import tracer
+    from utils.prompts.compressor import compressor
+    
     ctx = get_channel_context()
+    # Compress draft before sending
+    draft_summary = compressor.compress_dict(state["draft"], max_length=150)
     prompt = get_critique_prompt(state["draft"], state["topic"], ctx)
-    response = llm_precise.invoke([HumanMessage(content=prompt)])
     
     try:
+        response = llm_precise.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
+        
         content = response.content.strip()
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         critique_data = json.loads(content)
         score = critique_data.get("overall_score", 7.0)
         verdict = critique_data.get("verdict", "APPROVED")
-    except:
+    except Exception as e:
+        logging.warning(f"[Brain] Critique parsing failed: {e}, using fallback")
         score = 7.0
         verdict = "APPROVED"
         critique_data = {"verdict": verdict}
