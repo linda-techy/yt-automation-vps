@@ -9,7 +9,12 @@ import os
 import json
 import logging
 import traceback
-import psutil
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
+    logging.warning("[HealthMonitor] psutil not available - disk/memory checks will be limited")
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -45,6 +50,10 @@ class HealthMonitor:
             
     def check_memory(self, min_available_percent=20):
         """Check available RAM"""
+        if not HAS_PSUTIL:
+            logging.warning("[Health] psutil not available - skipping memory check")
+            return {'healthy': True, 'available_gb': None, 'total_gb': None, 'used_percent': None, 'skipped': True}
+        
         try:
             mem = psutil.virtual_memory()
             

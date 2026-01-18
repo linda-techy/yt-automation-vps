@@ -101,9 +101,31 @@ class DocumentaryState(TypedDict):
 # ============================================================================
 from adapters.openai.llm_wrapper import get_llm_analyst, get_llm_storyteller, get_llm_editor
 
-llm_analyst = get_llm_analyst()
-llm_storyteller = get_llm_storyteller()
-llm_editor = get_llm_editor()
+# Lazy initialization - only create when needed (avoids API key requirement at import time)
+_llm_analyst = None
+_llm_storyteller = None
+_llm_editor = None
+
+def _get_llm_analyst():
+    """Lazy getter for analyst LLM"""
+    global _llm_analyst
+    if _llm_analyst is None:
+        _llm_analyst = get_llm_analyst()  # Imported function from llm_wrapper
+    return _llm_analyst
+
+def _get_llm_storyteller():
+    """Lazy getter for storyteller LLM"""
+    global _llm_storyteller
+    if _llm_storyteller is None:
+        _llm_storyteller = get_llm_storyteller()  # Imported function from llm_wrapper
+    return _llm_storyteller
+
+def _get_llm_editor():
+    """Lazy getter for editor LLM"""
+    global _llm_editor
+    if _llm_editor is None:
+        _llm_editor = get_llm_editor()  # Imported function from llm_wrapper
+    return _llm_editor
 
 # Import prompt registry and compressor for token optimization
 from utils.prompts.registry import registry
@@ -168,7 +190,7 @@ def get_critique_prompt(script: dict, ctx: dict) -> str:
 def perceive_long_node(state: DocumentaryState) -> dict:
     ctx = get_channel_context()
     prompt = get_perceive_prompt(state["topic"], ctx)
-    response = llm_analyst.invoke([HumanMessage(content=prompt)])
+    response = _get_llm_analyst().invoke([HumanMessage(content=prompt)])
     
     try:
         content = response.content
@@ -192,7 +214,7 @@ def research_long_node(state: DocumentaryState) -> dict:
     prompt = get_research_prompt(state["perception"], state["topic"], ctx)
     
     try:
-        response = llm_analyst.invoke(
+        response = _get_llm_analyst().invoke(
             [HumanMessage(content=prompt)],
             trace_id=tracer.get_trace_id(),
             compress_context=True
@@ -218,7 +240,7 @@ def structure_node(state: DocumentaryState) -> dict:
     prompt = get_structure_prompt(state["perception"], state["research"], ctx)
     
     try:
-        response = llm_analyst.invoke(
+        response = _get_llm_analyst().invoke(
             [HumanMessage(content=prompt)],
             trace_id=tracer.get_trace_id(),
             compress_context=True
@@ -262,7 +284,7 @@ def draft_sections_node(state: DocumentaryState) -> dict:
                                     state["perception"], target_words, ctx)
         
         try:
-            response = llm_storyteller.invoke(
+            response = _get_llm_storyteller().invoke(
                 [HumanMessage(content=prompt)],
                 trace_id=tracer.get_trace_id(),
                 compress_context=True
@@ -295,7 +317,7 @@ def assemble_node(state: DocumentaryState) -> dict:
     prompt = get_assemble_prompt(state["sections"], state["perception"], ctx)
     
     try:
-        response = llm_editor.invoke(
+        response = _get_llm_editor().invoke(
             [HumanMessage(content=prompt)],
             trace_id=tracer.get_trace_id(),
             compress_context=True
@@ -329,7 +351,7 @@ def critique_long_node(state: DocumentaryState) -> dict:
     prompt = get_critique_prompt(state["draft"], ctx)
     
     try:
-        response = llm_editor.invoke(
+        response = _get_llm_editor().invoke(
             [HumanMessage(content=prompt)],
             trace_id=tracer.get_trace_id(),
             compress_context=True

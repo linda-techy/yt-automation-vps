@@ -114,13 +114,35 @@ class CognitiveState(TypedDict):
 
 
 # ============================================================================
-# LLM SETUP - Using wrapped LLM with error handling
+# LLM SETUP - Using wrapped LLM with error handling (lazy initialization)
 # ============================================================================
 from adapters.openai.llm_wrapper import get_llm_fast, get_llm_creative, get_llm_precise
 
-llm_fast = get_llm_fast()
-llm_creative = get_llm_creative()
-llm_precise = get_llm_precise()
+# Lazy initialization - only create when needed (avoids API key requirement at import time)
+_llm_fast = None
+_llm_creative = None
+_llm_precise = None
+
+def _get_llm_fast():
+    """Lazy getter for fast LLM"""
+    global _llm_fast
+    if _llm_fast is None:
+        _llm_fast = get_llm_fast()  # Imported function from llm_wrapper
+    return _llm_fast
+
+def _get_llm_creative():
+    """Lazy getter for creative LLM"""
+    global _llm_creative
+    if _llm_creative is None:
+        _llm_creative = get_llm_creative()  # Imported function from llm_wrapper
+    return _llm_creative
+
+def _get_llm_precise():
+    """Lazy getter for precise LLM"""
+    global _llm_precise
+    if _llm_precise is None:
+        _llm_precise = get_llm_precise()  # Imported function from llm_wrapper
+    return _llm_precise
 
 
 # ============================================================================
@@ -176,7 +198,7 @@ def get_refine_prompt(draft: dict, critique: str, priority: str, ctx: dict) -> s
 def perceive_node(state: CognitiveState) -> dict:
     ctx = get_channel_context()
     prompt = get_perceive_prompt(state["topic"], ctx)
-    response = llm_fast.invoke([HumanMessage(content=prompt)])
+    response = _get_llm_fast().invoke([HumanMessage(content=prompt)])
     
     try:
         content = response.content.strip()
@@ -199,7 +221,7 @@ def research_node(state: CognitiveState) -> dict:
     prompt = get_research_prompt(state["perception"], ctx)
     
     try:
-        response = llm_fast.invoke(
+        response = _get_llm_fast().invoke(
             [HumanMessage(content=prompt)],
             trace_id=tracer.get_trace_id(),
             compress_context=True
@@ -225,7 +247,7 @@ def ideate_node(state: CognitiveState) -> dict:
     prompt = get_ideate_prompt(state["perception"], state["research"], ctx)
     
     try:
-        response = llm_creative.invoke(
+        response = _get_llm_creative().invoke(
             [HumanMessage(content=prompt)],
             trace_id=tracer.get_trace_id(),
             compress_context=True
@@ -254,7 +276,7 @@ def draft_node(state: CognitiveState) -> dict:
     prompt = get_draft_prompt(state["perception"], state["research"], chosen_angle, ctx)
     
     try:
-        response = llm_creative.invoke(
+        response = _get_llm_creative().invoke(
             [HumanMessage(content=prompt)],
             trace_id=tracer.get_trace_id(),
             compress_context=True
@@ -287,7 +309,7 @@ def critique_node(state: CognitiveState) -> dict:
     prompt = get_critique_prompt(state["draft"], state["topic"], ctx)
     
     try:
-        response = llm_precise.invoke(
+        response = _get_llm_precise().invoke(
             [HumanMessage(content=prompt)],
             trace_id=tracer.get_trace_id(),
             compress_context=True
@@ -323,7 +345,7 @@ def refine_node(state: CognitiveState) -> dict:
         priority = "general improvement"
     
     prompt = get_refine_prompt(state["draft"], state["critique"], priority, ctx)
-    response = llm_creative.invoke([HumanMessage(content=prompt)])
+    response = _get_llm_creative().invoke([HumanMessage(content=prompt)])
     
     try:
         content = response.content.strip()
