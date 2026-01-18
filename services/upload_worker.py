@@ -57,9 +57,18 @@ def check_and_upload_pending() -> Dict[str, int]:
     """
     Check pending uploads and upload those ready for scheduled time.
     
+    Includes:
+    - Duplicate check (prevent re-uploads)
+    - Quota validation
+    - File locking (prevent concurrent uploads)
+    - Cross-promotion comment updates
+    
     Returns:
         dict: {"uploaded": count, "failed": count, "pending": count}
     """
+    from services.upload_validator import is_already_uploaded, check_quota_available
+    from services.upload_tracker import load_upload_status, save_upload_status
+    
     pending = get_pending_uploads()
     
     if not pending:
@@ -70,6 +79,9 @@ def check_and_upload_pending() -> Dict[str, int]:
         "failed": 0,
         "pending": len(pending)
     }
+    
+    # Update linked_long_video IDs for shorts (if long video was uploaded)
+    _update_linked_videos()
     
     for item in pending[:]:  # Copy list to avoid modification during iteration
         file_path = item.get("file_path")
@@ -90,9 +102,27 @@ def check_and_upload_pending() -> Dict[str, int]:
             results["failed"] += 1
             continue
         
+        # Check if already uploaded (duplicate prevention)
+        already_uploaded, existing_id = is_already_uploaded(file_path)
+        if already_uploaded:
+            logging.info(f"Video already uploaded: {existing_id}, marking as uploaded")
+            mark_as_uploaded(file_path, existing_id)
+            mark_upload_success(file_path, existing_id)
+            results["uploaded"] += 1
+            continue
+        
         # Check if it's time to upload
         if not should_upload_now(scheduled_time):
             continue  # Not time yet, skip
+        
+        # Check quota before upload
+        try:
+            quota_status = check_quota_available(required_units=1600)
+            if not quota_status['available']:
+                logging.warning(f"Quota exhausted, skipping upload: {quota_status['used']}/{quota_status['limit']}")
+                continue  # Try again next minute
+        except Exception as e:
+            logging.warning(f"Quota check failed: {e}, proceeding anyway")
         
         # Time to upload!
         logging.info(f"⏰ Upload time reached for: {os.path.basename(file_path)}")
@@ -138,20 +168,23 @@ def check_and_upload_pending() -> Dict[str, int]:
                         insert_comment(video_id, comment_q)
                     except Exception as e:
                         logging.warning(f"Comment posting failed: {e}")
+                    
+                    # Update linked_long_video for related shorts
+                    _update_shorts_with_long_id(video_id, item.get("topic"))
                 
                 # Handle cross-promotion comments for shorts
-                if video_type == "short" and metadata.get("linked_long_video"):
-                    try:
-                        from services.youtube_uploader import insert_comment, pin_comment
-                        long_video_id = metadata.get("linked_long_video")
-                        if long_video_id and long_video_id != "pending":
+                if video_type == "short":
+                    long_video_id = metadata.get("linked_long_video")
+                    if long_video_id and long_video_id != "pending":
+                        try:
+                            from services.youtube_uploader import insert_comment, pin_comment
                             link_comment = f"📺 Watch the full breakdown: https://youtube.com/watch?v={long_video_id}"
                             comment_id = insert_comment(video_id, link_comment)
                             if comment_id:
                                 pin_comment(comment_id)
                                 logging.info(f"  ✅ Pinned cross-promotion comment")
-                    except Exception as e:
-                        logging.warning(f"Cross-promotion comment failed: {e}")
+                        except Exception as e:
+                            logging.warning(f"Cross-promotion comment failed: {e}")
                 
                 results["uploaded"] += 1
                 logging.info(f"✅ Successfully uploaded: {os.path.basename(file_path)} → {video_id}")
@@ -177,6 +210,78 @@ def check_and_upload_pending() -> Dict[str, int]:
             logging.error(f"❌ Upload failed for {os.path.basename(file_path)} (attempt {item['attempts']}/{max_attempts}): {e}")
     
     return results
+
+
+def _update_linked_videos():
+    """
+    Update linked_long_video IDs for shorts after long video uploads.
+    This ensures cross-promotion comments have the correct long video ID.
+    """
+    from services.upload_tracker import load_upload_status, save_upload_status
+    
+    try:
+        status = load_upload_status()
+        uploaded = status.get("uploaded", [])
+        pending = status.get("pending_uploads", [])
+        
+        # Find uploaded long videos by topic
+        long_video_by_topic = {}
+        for uploaded_item in uploaded:
+            if uploaded_item.get("type") == "long":
+                topic = uploaded_item.get("topic", "")
+                video_id = uploaded_item.get("video_id")
+                if topic and video_id:
+                    long_video_by_topic[topic] = video_id
+        
+        # Update shorts that reference long videos
+        updated = False
+        for pending_item in pending:
+            if pending_item.get("type") == "short":
+                metadata = pending_item.get("metadata", {})
+                linked_long = metadata.get("linked_long_video")
+                topic = pending_item.get("topic", "")
+                
+                # If linked_long_video is "pending", try to find the ID by topic
+                if linked_long == "pending" and topic in long_video_by_topic:
+                    metadata["linked_long_video"] = long_video_by_topic[topic]
+                    pending_item["metadata"] = metadata
+                    updated = True
+        
+        if updated:
+            save_upload_status(status)
+            logging.debug("Updated linked_long_video IDs for shorts")
+    except Exception as e:
+        logging.warning(f"Failed to update linked videos: {e}")
+
+
+def _update_shorts_with_long_id(long_video_id: str, topic: str):
+    """
+    Update shorts metadata with long video ID after long video uploads.
+    
+    Args:
+        long_video_id: YouTube video ID of the uploaded long video
+        topic: Topic string to match related shorts
+    """
+    from services.upload_tracker import load_upload_status, save_upload_status
+    
+    try:
+        status = load_upload_status()
+        pending = status.get("pending_uploads", [])
+        updated = False
+        
+        for pending_item in pending:
+            if pending_item.get("type") == "short" and pending_item.get("topic") == topic:
+                metadata = pending_item.get("metadata", {})
+                if metadata.get("linked_long_video") == "pending":
+                    metadata["linked_long_video"] = long_video_id
+                    pending_item["metadata"] = metadata
+                    updated = True
+        
+        if updated:
+            save_upload_status(status)
+            logging.info(f"Updated {updated} shorts with long video ID: {long_video_id}")
+    except Exception as e:
+        logging.warning(f"Failed to update shorts with long ID: {e}")
 
 
 if __name__ == "__main__":

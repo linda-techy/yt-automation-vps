@@ -781,6 +781,18 @@ def run_unified_pipeline():
             )
             logging.info(f"✅ Long video queued for scheduled upload at {long_publish_time}")
             long_video_id = None  # Will be set after upload completes
+            
+            # Register in lifecycle manager for tracking
+            register_video(
+                video_path=long_video_path,
+                video_type="long",
+                topic=topic,
+                scheduled_time=long_publish_time,
+                metadata={
+                    "title": long_script.get('title'),
+                    "thumbnail_path": long_thumbnail
+                }
+            )
         
         # Log long video to history (with None video_id until uploaded)
         log_upload_history({
@@ -830,7 +842,7 @@ def run_unified_pipeline():
                     "script": short_data['script'],
                     "quality_score": short_quality['overall_score'],
                     "index": i,
-                    "linked_long_video": long_video_id  # Will be updated after long video uploads
+                    "linked_long_video": "pending"  # Will be updated after long video uploads
                 }
             )
             logging.info(f"  ✅ Short {i+1} queued for scheduled upload at {short_time}")

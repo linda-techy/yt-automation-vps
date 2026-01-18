@@ -110,15 +110,31 @@ def main():
     logging.info(f"⏰ Next run scheduled for: {schedule.next_run()}")
     
     # Keep alive loop
+    last_cleanup_time = datetime.datetime.now()
+    cleanup_interval_hours = 6  # Run cleanup every 6 hours
+    
     while True:
         # Check for scheduled uploads first (runs every minute)
         try:
             from services.upload_worker import check_and_upload_pending
             upload_results = check_and_upload_pending()
-            if upload_results["uploaded"] > 0:
-                logging.info(f"📤 Upload worker: {upload_results['uploaded']} videos uploaded, {upload_results['failed']} failed, {upload_results['pending']} pending")
+            if upload_results["uploaded"] > 0 or upload_results["failed"] > 0:
+                logging.info(f"📤 Upload worker: {upload_results['uploaded']} uploaded, {upload_results['failed']} failed, {upload_results['pending']} pending")
         except Exception as e:
             logging.warning(f"Upload worker error: {e}")
+        
+        # Periodic cleanup (every 6 hours)
+        now = datetime.datetime.now()
+        if (now - last_cleanup_time).total_seconds() >= cleanup_interval_hours * 3600:
+            try:
+                from services.video_lifecycle_manager import cleanup_uploaded_videos, cleanup_temp_files
+                deleted_count = cleanup_uploaded_videos(max_age_hours=48)
+                if deleted_count > 0:
+                    logging.info(f"🗑️ Periodic cleanup: Deleted {deleted_count} old videos")
+                cleanup_temp_files()
+                last_cleanup_time = now
+            except Exception as e:
+                logging.warning(f"Periodic cleanup error: {e}")
         
         # Then check for pipeline jobs
         schedule.run_pending()
