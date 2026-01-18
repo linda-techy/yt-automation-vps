@@ -2,116 +2,196 @@
 Fallback Thumbnail Generator
 
 Creates professional fallback thumbnails when DALL-E fails.
-Uses PIL to create high-quality text-based thumbnails.
+Uses PIL to create high-quality text-based thumbnails with Malayalam text.
 
 Ensures pipeline NEVER fails due to thumbnail generation.
 """
 
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps, ImageEnhance
 import logging
 
-def create_fallback_thumbnail(title, topic, output_path="videos/output/fallback_thumb.png"):
+def create_fallback_thumbnail(title, topic, output_path="videos/output/fallback_thumb.png", dimensions=None, video_type="short"):
     """
-    Create a professional fallback thumbnail using PIL.
+    Create a professional fallback thumbnail using PIL with Malayalam text.
     
     Args:
-        title: Video title (Malayalam or English)
-        topic: Topic for background color selection
+        title: Video title (used for context)
+        topic: Topic for background color selection and headline generation
         output_path: Where to save the thumbnail
+        dimensions: Tuple (width, height) - if None, uses default based on video_type
+        video_type: "short" (9:16) or "long" (16:9)
     
     Returns:
         Path to created thumbnail
     """
     try:
-        # Create 9:16 image (1080x1920 for shorts, will be resized for long)
-        width, height = 1080, 1920
+        # Determine dimensions
+        if dimensions:
+            width, height = dimensions
+        elif video_type == "long":
+            width, height = 1920, 1080
+        else:  # short
+            width, height = 1080, 1920
         
-        # Color scheme based on topic keywords
-        if any(word in topic.lower() for word in ['tech', 'ai', 'technology']):
-            bg_color = (30, 30, 50)  # Dark blue
-            accent = (100, 200, 255)  # Light blue
-        elif any(word in topic.lower() for word in ['news', 'breaking', 'update']):
-            bg_color = (50, 20, 20)  # Dark red
-            accent = (255, 100, 100)  # Light red
-        elif any(word in topic.lower() for word in ['money', 'finance', 'stock']):
-            bg_color = (20, 40, 20)  # Dark green
-            accent = (100, 255, 150)  # Light green
-        else:
-            bg_color = (40, 40, 40)  # Dark gray
-            accent = (255, 200, 50)  # Gold
+        # Import Malayalam headline generator
+        from services.thumbnail_generator import generate_malayalam_headline
         
-        # Create base image
+        # Generate Malayalam headline (100% correct, no AI)
+        import random
+        emotion = random.choice(["curiosity", "shock", "urgency", "money"])
+        malayalam_text = generate_malayalam_headline(topic, title, emotion, video_type)
+        
+        # KERALA CTR COLORS - Same as main generator
+        if video_type == "short":
+            bg_color = (139, 0, 0)  # Dark red background (Kerala winner)
+            text_color = (255, 255, 0)  # Pure yellow
+            stroke_color = (139, 0, 0)  # Dark red stroke
+        else:  # long
+            bg_color = (0, 0, 0)  # Black background
+            text_color = (255, 215, 0)  # Gold
+            stroke_color = (0, 0, 0)  # Black
+        
+        # Create base image with gradient
         img = Image.new('RGB', (width, height), bg_color)
         draw = ImageDraw.Draw(img)
         
-        # Add gradient overlay
+        # Add subtle gradient overlay for depth
         for y in range(height):
-            alpha = int(255 * (y / height) * 0.3)
-            line_color = tuple(min(255, c + alpha//2) for c in bg_color)
+            alpha = int(255 * (y / height) * 0.2)
+            line_color = tuple(min(255, max(0, c + alpha//3)) for c in bg_color)
             draw.line([(0, y), (width, y)], fill=line_color)
         
-        # Load Malayalam-supporting font
-        font_paths = [
-            "C:/Windows/Fonts/NirmalaUI-Bold.ttf",
-            "C:/Windows/Fonts/NirmalaUI.ttf",
-            "C:/Windows/Fonts/arialbd.ttf"
-        ]
+        # Load font using same system as main generator
+        from services.thumbnail_playbook import get_font_recommendation
         
-        font_large = None
-        for fp in font_paths:
-            try:
-                font_large = ImageFont.truetype(fp, 120)
-                break
-            except:
-                continue
+        # Font size based on video type
+        if video_type == "short":
+            font_size = 400  # Same as main generator
+        else:  # long
+            font_size = 180  # Same as main generator
         
-        if not font_large:
-            font_large = ImageFont.load_default()
+        font_path = None
+        try:
+            font_path = get_font_recommendation()
+            font = ImageFont.truetype(font_path, font_size)
+        except Exception as e:
+            logging.error(f"Font loading failed in fallback: {e}")
+            # Last resort fallback
+            font_paths = [
+                "C:/Windows/Fonts/NirmalaUI-Bold.ttf",
+                "C:/Windows/Fonts/NirmalaUI.ttf",
+                "fonts/NotoSansMalayalam-Regular.ttf"
+            ]
+            font = None
+            for fp in font_paths:
+                try:
+                    if os.path.exists(fp):
+                        font_path = fp  # Store for later use
+                        font = ImageFont.truetype(fp, font_size)
+                        break
+                except:
+                    continue
+            if not font:
+                font = ImageFont.load_default()
+                font_path = None  # Default font has no path
         
-        # Truncate title if too long
-        display_title = title[:50] if len(title) > 50 else title
-        
-        # Calculate text position (centered)
-        bbox = draw.textbbox((0, 0), display_title, font=font_large)
+        # Get text size for dynamic positioning
+        text = malayalam_text
+        bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        x = (width - text_width) // 2
-        y = (height - text_height) // 2
+        # ULTRA-THICK STROKES for readability (needed for padding calculation)
+        stroke_width = 12 if video_type == "short" else 8
+        stroke_padding = stroke_width + 2  # Extra padding for outer stroke
         
-        # Draw text with shadow/glow
-        # Shadow
-        shadow_offset = 8
-        draw.text((x + shadow_offset, y + shadow_offset), display_title, font=font_large, fill=(0, 0, 0, 180))
+        # Auto-size if too wide (same logic as main generator)
+        # Account for horizontal padding (5% on each side = 10% total)
+        # Plus stroke padding on each side
+        horizontal_padding = max(int(width * 0.05), 40)  # 5% or minimum 40px per side
+        max_width = width - (horizontal_padding * 2) - (stroke_padding * 2)  # Account for padding and stroke
+        attempts = 0
+        while text_width > max_width and attempts < 10 and font_path:
+            font_size = int(font_size * 0.95)
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+            except:
+                # If font reload fails, break to avoid infinite loop
+                break
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            attempts += 1
         
-        # Main text
-        draw.text((x, y), display_title, font=font_large, fill=accent)
+        # PROPER PADDING: Same as main generator - ensure text doesn't touch edges
+        # stroke_padding already calculated above
         
-        # Add "AUTO-GENERATED" watermark (small, bottom corner)
-        try:
-            font_small = ImageFont.truetype(font_paths[0], 30)
-        except:
-            font_small = font_large
+        if video_type == "short":
+            # Shorts: Top padding (5% of height, minimum 80px to account for stroke)
+            top_padding = max(int(height * 0.05), 80 + stroke_padding)
+            y = top_padding + (text_height / 2)
+        else:  # long
+            # Long: Top padding (8% of height, minimum 100px)
+            top_padding = max(int(height * 0.08), 100 + stroke_padding)
+            y = top_padding + (text_height / 2)
         
-        watermark = "AUTO"
-        draw.text((width - 150, height - 80), watermark, font=font_small, fill=(150, 150, 150))
+        # Horizontal centering
+        x = width / 2  # Always center
+        
+        # Validate text doesn't overflow (safety check)
+        text_top = y - (text_height / 2) - stroke_padding
+        text_bottom = y + (text_height / 2) + stroke_padding
+        
+        if text_top < 0:
+            y = (text_height / 2) + stroke_padding + 10
+        if text_bottom > height:
+            y = height - (text_height / 2) - stroke_padding - 10
+        
+        # Multi-layer rendering for maximum contrast (same as main generator)
+        # Outer dark stroke
+        draw.text((x, y), text, font=font, fill="black", anchor="mm", stroke_width=stroke_width+2, stroke_fill="black")
+        # Main text with Kerala CTR color
+        draw.text((x, y), text, font=font, fill=text_color, anchor="mm", stroke_width=stroke_width, stroke_fill=stroke_color)
+        
+        # Apply professional effects (sharpening, contrast, saturation)
+        # Enhance contrast
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.1)  # 10% more contrast
+        
+        # Enhance saturation
+        enhancer = ImageEnhance.Color(img)
+        img = enhancer.enhance(1.15)  # 15% more saturation
+        
+        # Apply sharpening
+        img = img.filter(ImageFilter.SHARPEN)
         
         # Save
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        img.save(output_path, quality=95)
+        img.save(output_path, quality=95, optimize=True)
         
-        logging.info(f"[Fallback Thumb] Created: {output_path}")
+        logging.info(f"[Fallback Thumb] Created: {output_path} with text: {text}")
         return output_path
     
     except Exception as e:
         logging.error(f"[Fallback Thumb] Failed to create fallback: {e}")
-        # Last resort: create solid color image
+        # Last resort: create solid color image with correct dimensions
         try:
-            img = Image.new('RGB', (1080, 1920), (50, 50, 50))
+            # Determine dimensions for last resort
+            if dimensions:
+                width, height = dimensions
+            elif video_type == "long":
+                width, height = 1920, 1080
+            else:  # short
+                width, height = 1080, 1920
+            
+            img = Image.new('RGB', (width, height), (50, 50, 50))
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             img.save(output_path)
+            logging.warning(f"[Fallback Thumb] Created minimal fallback: {output_path}")
             return output_path
-        except:
+        except Exception as last_error:
+            logging.error(f"[Fallback Thumb] Last resort also failed: {last_error}")
             return None
 
 

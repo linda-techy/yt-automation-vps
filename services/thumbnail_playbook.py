@@ -146,16 +146,29 @@ def check_ypp_safety(text, topic):
     }
 
 
+# Font cache to avoid repeated file system checks
+_font_cache = None
+
 def get_font_recommendation():
     """
     Returns Malayalam-friendly fonts optimized for thumbnails.
+    Uses caching to ensure consistent font selection.
     
     Priority order:
     1. Noto Sans Malayalam Bold (best for thumbnails)
-    2. Meera Bold
-    3. Uroob Heavy
-    4. Nirmala UI Bold (Windows fallback)
+    2. Nirmala UI Bold (Windows fallback)
+    3. Noto Sans Malayalam Regular
+    4. Nirmala UI Regular
+    
+    Returns:
+        str: Path to font file
     """
+    global _font_cache
+    
+    # Return cached font if available
+    if _font_cache and os.path.exists(_font_cache):
+        return _font_cache
+    
     fonts = [
         # Best options
         ("fonts/NotoSansMalayalam-Bold.ttf", "Noto Sans Malayalam Bold"),
@@ -173,6 +186,7 @@ def get_font_recommendation():
     for path, name in fonts:
         if os.path.exists(path):
             logging.info(f"[Font] Using: {name}")
+            _font_cache = path  # Cache for consistency
             return path
     
     raise Exception("No Malayalam-friendly font found. Install Noto Sans Malayalam or Nirmala UI.")

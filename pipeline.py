@@ -174,8 +174,12 @@ def run_pipeline():
     """
     Main pipeline with comprehensive error handling (FIX #5).
     """
+    # Initialize trace ID for this pipeline run
+    from utils.logging.tracer import tracer
+    trace_id = tracer.set_trace_id()
+    
     logging.info("="*60)
-    logging.info("Starting Production Pipeline (Hardened)")
+    logging.info(f"Starting Production Pipeline (Hardened) [Trace:{trace_id}]")
     logging.info("="*60)
     
     try:
@@ -250,6 +254,35 @@ def run_pipeline():
         logging.info("STEP 8: Generating SEO Metadata (Malayalam/English)...")
         seo = generate_seo(topic)
         
+        # 6.5. Quality Gate - Pre-upload quality check
+        logging.info("STEP 8.5: Quality Scoring (Pre-upload gate)...")
+        from services.quality_scorer import quality_scorer
+        import os
+        
+        # Get video duration if possible
+        duration = None
+        try:
+            from moviepy.editor import VideoFileClip
+            with VideoFileClip(final_video) as clip:
+                duration = clip.duration
+        except:
+            pass
+        
+        quality_result = quality_scorer.score_complete(
+            script_data=script_data,
+            video_path=final_video,
+            seo_metadata=seo,
+            topic=topic
+        )
+        
+        if not quality_result["passed"]:
+            logging.error(f"❌ Quality gate FAILED: Overall score {quality_result['overall_score']:.2f}/10")
+            failed_components = [k for k, v in quality_result["components"].items() if not v["passed"]]
+            logging.error(f"   Failed: {', '.join(failed_components)}")
+            raise Exception(f"Quality gate failed. Score: {quality_result['overall_score']:.2f}/10. Cannot upload.")
+        
+        logging.info(f"✅ Quality gate PASSED: {quality_result['overall_score']:.2f}/10")
+        
         logging.info("STEP 9: Scheduling Upload...")
         publish_at = get_smart_publish_time()
         logging.info(f"📅 Scheduled for: {publish_at}")
@@ -310,8 +343,12 @@ def run_unified_pipeline():
     UNIFIED HYBRID PIPELINE: Generates 1 Long-Form + 5 Shorts with ALL quality checks.
     Auto-generates trending topics from News API.
     """
+    # Initialize trace ID for this pipeline run
+    from utils.logging.tracer import tracer
+    trace_id = tracer.set_trace_id()
+    
     logging.info("="*60)
-    logging.info("Starting UNIFIED HYBRID Pipeline (Long + Shorts)")
+    logging.info(f"Starting UNIFIED HYBRID Pipeline (Long + Shorts) [Trace:{trace_id}]")
     logging.info("="*60)
     
     # Track upload success for conditional cleanup
@@ -327,24 +364,57 @@ def run_unified_pipeline():
         # ========== STEP 2: Generate Long-Form Script ==========
         logging.info("STEP 2: Generating Long-Form Script (8-10 mins)...")
         from services.script_agent_long import generate_long_script
+        from services.variation_engine import variation_engine
+        
         long_script = generate_long_script(topic)
         
         if not long_script or not long_script.get('sections'):
             raise Exception("Long-form script generation failed")
+        
+        # Add variation to script (intro/outro rotation)
+        if long_script.get('sections'):
+            # Add variation to first section (intro)
+            first_section = long_script['sections'][0]
+            if first_section.get('content'):
+                intro = variation_engine.get_intro()
+                first_section['content'] = f"{intro} {first_section['content']}"
             
+            # Add variation to last section (outro)
+            last_section = long_script['sections'][-1]
+            if last_section.get('content'):
+                outro = variation_engine.get_outro()
+                last_section['content'] = f"{last_section['content']} {outro}"
+        
         logging.info(f"✅ Long Script: {long_script.get('title')}")
         
         # ===== THUMBNAIL GENERATION (EARLY - FAIL-SAFE) =====
         # Create thumbnail NOW (only needs topic + title)
         # Ensures thumbnail exists even if video assembly fails
-        logging.info("🎨 Generating thumbnail (early stage)...")
+        logging.info("🎨 Generating LONG thumbnail (16:9, 1920x1080)...")
+        long_thumbnail = None
         try:
             long_thumb_text = long_script.get('thumbnail_text', long_script.get('title', 'WATCH NOW'))
             long_thumbnail = generate_thumbnail(topic, long_thumb_text, video_type="long")
-            logging.info(f"✅ Thumbnail: {long_thumbnail}")
+            
+            # Verify export
+            if long_thumbnail and os.path.exists(long_thumbnail):
+                file_size = os.path.getsize(long_thumbnail)
+                logging.info(f"✅ LONG thumbnail exported: {long_thumbnail} ({file_size:,} bytes)")
+            else:
+                raise Exception(f"Long thumbnail file not found: {long_thumbnail}")
         except Exception as e:
-            logging.warning(f"⚠️ Thumbnail failed: {e}")
-            long_thumbnail = None
+            logging.error(f"❌ Long thumbnail generation failed: {e}")
+            # Retry once with fallback
+            try:
+                logging.info("🔄 Retrying long thumbnail generation...")
+                long_thumbnail = generate_thumbnail(topic, topic, video_type="long")
+                if long_thumbnail and os.path.exists(long_thumbnail):
+                    logging.info(f"✅ Long thumbnail created on retry: {long_thumbnail}")
+                else:
+                    raise Exception("Retry also failed")
+            except Exception as retry_error:
+                logging.error(f"❌ Long thumbnail retry failed: {retry_error}")
+                raise Exception("Long thumbnail generation failed completely. Cannot continue.")
         
         # ========== STEP 3: Repurpose to 5 Shorts ==========
         logging.info("STEP 3: Repurposing into 5 Shorts Scripts...")
@@ -359,17 +429,41 @@ def run_unified_pipeline():
         
         # ===== SHORTS THUMBNAILS GENERATION (EARLY - FAIL-SAFE) =====
         # Generate ALL 5 shorts thumbnails NOW (before video processing)
-        logging.info("🎨 Generating Shorts thumbnails (early stage)...")
+        logging.info(f"🎨 Generating {len(shorts_scripts)} SHORTS thumbnails (9:16, 1080x1920)...")
         shorts_thumbnails = []
         for i, short_script in enumerate(shorts_scripts):
             try:
                 s_thumb_text = short_script.get('thumbnail_text', 'WATCH NOW')
                 s_thumb = generate_thumbnail(topic, s_thumb_text, video_type="short")
-                shorts_thumbnails.append(s_thumb)
-                logging.info(f"✅ Short {i+1} thumbnail: {s_thumb}")
+                
+                # Verify export
+                if s_thumb and os.path.exists(s_thumb):
+                    file_size = os.path.getsize(s_thumb)
+                    shorts_thumbnails.append(s_thumb)
+                    logging.info(f"✅ Short {i+1}/{len(shorts_scripts)} thumbnail exported: {s_thumb} ({file_size:,} bytes)")
+                else:
+                    raise Exception(f"Short {i+1} thumbnail file not found: {s_thumb}")
             except Exception as e:
-                logging.warning(f"⚠️ Short {i+1} thumbnail failed: {e}")
-                shorts_thumbnails.append(None)
+                logging.error(f"❌ Short {i+1} thumbnail failed: {e}")
+                # Retry once with fallback
+                try:
+                    logging.info(f"🔄 Retrying short {i+1} thumbnail generation...")
+                    s_thumb = generate_thumbnail(topic, topic, video_type="short")
+                    if s_thumb and os.path.exists(s_thumb):
+                        shorts_thumbnails.append(s_thumb)
+                        logging.info(f"✅ Short {i+1} thumbnail created on retry: {s_thumb}")
+                    else:
+                        raise Exception("Retry also failed")
+                except Exception as retry_error:
+                    logging.error(f"❌ Short {i+1} thumbnail retry failed: {retry_error}")
+                    # Don't fail entire pipeline - append None and continue
+                    shorts_thumbnails.append(None)
+        
+        # Final export summary
+        successful_shorts = sum(1 for t in shorts_thumbnails if t is not None)
+        logging.info(f"📊 Thumbnail Export Summary: 1 Long + {successful_shorts}/{len(shorts_scripts)} Shorts")
+        if successful_shorts < len(shorts_scripts):
+            logging.warning(f"⚠️ {len(shorts_scripts) - successful_shorts} shorts thumbnails failed to generate")
         
         # ===== SEO GENERATION (EARLY - REUSABLE) =====
         # Generate SEO NOW so it can be reused if pipeline fails later
@@ -654,7 +748,39 @@ def run_unified_pipeline():
             # Track as pending upload
         track_pending_upload(long_video_path, "long", topic, long_publish_time, {"title": long_script.get('title')})
         
-        long_video_id = upload_short(long_video_path, long_seo, publish_at=long_publish_time, thumbnail_path=long_thumbnail)
+        # Quality gate for long video
+        logging.info("🔍 Quality Scoring: Long Video...")
+        from services.quality_scorer import quality_scorer
+        
+        long_duration = None
+        try:
+            from moviepy.editor import VideoFileClip
+            with VideoFileClip(long_video_path) as clip:
+                long_duration = clip.duration
+        except:
+            pass
+        
+        # Create script_data dict for quality scorer
+        long_script_data = {
+            "script": " ".join([s.get('content', '') for s in long_script.get('sections', [])]),
+            "title": long_script.get('title', topic),
+            "visual_cues": [c for s in long_script.get('sections', []) for c in s.get('visual_cues', [])]
+        }
+        
+        long_quality = quality_scorer.score_complete(
+            script_data=long_script_data,
+            video_path=long_video_path,
+            seo_metadata=long_seo_validated,
+            topic=topic
+        )
+        
+        if not long_quality["passed"]:
+            logging.error(f"❌ Long video quality gate FAILED: {long_quality['overall_score']:.2f}/10")
+            raise Exception(f"Long video quality gate failed. Score: {long_quality['overall_score']:.2f}/10")
+        
+        logging.info(f"✅ Long video quality PASSED: {long_quality['overall_score']:.2f}/10")
+        
+        long_video_id = upload_short(long_video_path, long_seo_validated, publish_at=long_publish_time, thumbnail_path=long_thumbnail)
         logging.info(f"✅ Long video uploaded: {long_video_id}")
         
         # Mark as uploaded in lifecycle manager
@@ -705,6 +831,22 @@ def run_unified_pipeline():
             
             # Track as pending
             track_pending_upload(short_data['path'], "short", topic, short_time, {"title": short_data['script'].get('title')})
+            
+            # Quality gate for short video
+            logging.info(f"🔍 Quality Scoring: Short {i+1}...")
+            short_quality = quality_scorer.score_complete(
+                script_data=short_data['script'],
+                video_path=short_data['path'],
+                seo_metadata=short_data['seo'],
+                topic=topic
+            )
+            
+            if not short_quality["passed"]:
+                logging.error(f"❌ Short {i+1} quality gate FAILED: {short_quality['overall_score']:.2f}/10")
+                logging.warning(f"⚠️ Skipping Short {i+1} upload due to quality failure")
+                continue
+            
+            logging.info(f"✅ Short {i+1} quality PASSED: {short_quality['overall_score']:.2f}/10")
             
             short_video_id = upload_short(
                 short_data['path'], 

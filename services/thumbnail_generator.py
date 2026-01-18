@@ -3,7 +3,7 @@ import time
 import logging
 import requests
 from openai import OpenAI
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance, ImageFilter
 import random
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -118,6 +118,126 @@ def generate_malayalam_headline(topic, title, emotion_type="curiosity", video_ty
     return selected
 
 
+def render_text_overlay(image, text, video_type, font_path, font_size, text_color, stroke_color):
+    """
+    Unified text rendering function for consistent style across all thumbnails.
+    
+    Args:
+        image: PIL Image object
+        text: Text to render (Malayalam)
+        video_type: "short" or "long"
+        font_path: Path to font file
+        font_size: Starting font size
+        text_color: RGB tuple for text color
+        stroke_color: RGB tuple for stroke color
+    
+    Returns:
+        tuple: (final_font, final_font_size, x, y) - rendering parameters
+    """
+    draw = ImageDraw.Draw(image)
+    w, h = image.size
+    
+    # Load font
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except Exception as e:
+        logging.error(f"Font loading failed: {e}")
+        raise Exception("Malayalam font required for thumbnails. Install Noto Sans Malayalam or Nirmala UI.")
+    
+    # Get text size for dynamic positioning
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    
+    # ULTRA-THICK STROKES for Kerala readability (needed for padding calculation)
+    stroke_width = 12 if video_type == "short" else 8
+    stroke_padding = stroke_width + 2  # Extra padding for outer stroke
+    
+    # SMART AUTO-SIZING: Reduce if text too wide
+    # Account for horizontal padding (5% on each side = 10% total)
+    # Plus stroke padding on each side
+    horizontal_padding = max(int(w * 0.05), 40)  # 5% or minimum 40px per side
+    max_width = w - (horizontal_padding * 2) - (stroke_padding * 2)  # Account for padding and stroke
+    attempts = 0
+    final_font_size = font_size
+    while text_width > max_width and attempts < 10:
+        final_font_size = int(final_font_size * 0.95)  # Reduce by 5%
+        font = ImageFont.truetype(font_path, final_font_size)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        attempts += 1
+    
+    logging.info(f"📏 Final font: {final_font_size}px (fills {int(text_width/w*100)}% width)")
+    
+    # PROPER PADDING: Ensure text doesn't touch edges
+    # stroke_padding already calculated above
+    
+    if video_type == "short":
+        # Shorts: Top padding (5% of height, minimum 80px to account for stroke)
+        top_padding = max(int(h * 0.05), 80 + stroke_padding)
+        # Ensure text center position accounts for half text height + padding
+        y = top_padding + (text_height / 2)
+    else:  # long
+        # Long: Top padding (8% of height, minimum 100px)
+        top_padding = max(int(h * 0.08), 100 + stroke_padding)
+        y = top_padding + (text_height / 2)
+    
+    # Horizontal centering (already handled by max_width, but ensure no overflow)
+    x = w / 2  # Always center
+    
+    # Validate text doesn't overflow (safety check)
+    text_top = y - (text_height / 2) - stroke_padding
+    text_bottom = y + (text_height / 2) + stroke_padding
+    text_left = x - (text_width / 2) - stroke_padding
+    text_right = x + (text_width / 2) + stroke_padding
+    
+    if text_top < 0 or text_bottom > h or text_left < 0 or text_right > w:
+        logging.warning(f"⚠️ Text may overflow edges. Adjusting position...")
+        # Adjust if needed
+        if text_top < 0:
+            y = (text_height / 2) + stroke_padding + 10
+        if text_bottom > h:
+            y = h - (text_height / 2) - stroke_padding - 10
+        if text_left < 0 or text_right > w:
+            # This shouldn't happen due to max_width, but just in case
+            logging.warning(f"⚠️ Text width exceeds image width")
+    
+    logging.info(f"📍 Text position: ({int(x)}, {int(y)}) with padding: top={int(text_top)}px")
+    
+    # Multi-layer rendering for maximum contrast
+    # Outer dark stroke
+    draw.text((x, y), text, font=font, fill="black", anchor="mm", stroke_width=stroke_width+2, stroke_fill="black")
+    # Main text with Kerala CTR color
+    draw.text((x, y), text, font=font, fill=text_color, anchor="mm", stroke_width=stroke_width, stroke_fill=stroke_color)
+    
+    return font, final_font_size, x, y
+
+
+def apply_professional_effects(image):
+    """
+    Apply professional image effects for polished thumbnails.
+    
+    Args:
+        image: PIL Image object
+    
+    Returns:
+        PIL Image object with effects applied
+    """
+    # Enhance contrast (subtle - 10% boost)
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(1.1)
+    
+    # Enhance saturation (15% boost for vibrant colors)
+    enhancer = ImageEnhance.Color(image)
+    image = enhancer.enhance(1.15)
+    
+    # Apply sharpening for crisp text
+    image = image.filter(ImageFilter.SHARPEN)
+    
+    return image
+
+
 def validate_thumbnail_contrast(image_path, text_color, bg_sample_coords):
     """
     Validate text has sufficient contrast (WCAG 3:1 minimum for large text).
@@ -215,8 +335,9 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
         )
         url = response.data[0].url
     except Exception as e:
-        # Fallback to simple thumbnail
+        # Fallback to simple thumbnail - ensures pipeline NEVER fails
         logging.warning(f"DALL-E thumbnail failed: {e}")
+        logging.info("🔄 Using fallback thumbnail generator...")
         from services.fallback_thumbnail import create_fallback_thumbnail
         
         # Fallback with unique hash
@@ -224,7 +345,25 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
         topic_hash = hashlib.md5(topic.encode()).hexdigest()[:8]
         safe_topic = "".join([c for c in topic if c.isalnum() or c in (' ', '-', '_')]).strip()[:30]
         fallback_path = output_path or f"videos/output/thumb_{topic_hash}_{safe_topic.replace(' ', '_')}_{video_type}.png"
-        return create_fallback_thumbnail(title, topic, fallback_path, dimensions)
+        
+        try:
+            result = create_fallback_thumbnail(title, topic, fallback_path, dimensions, video_type)
+            if result and os.path.exists(result):
+                logging.info(f"✅ Fallback thumbnail created: {result}")
+                return result
+            else:
+                raise Exception("Fallback thumbnail creation returned invalid path")
+        except Exception as fallback_error:
+            logging.error(f"❌ Fallback thumbnail also failed: {fallback_error}")
+            # Last resort: create minimal thumbnail
+            try:
+                os.makedirs(os.path.dirname(fallback_path), exist_ok=True)
+                img = Image.new('RGB', dimensions, (50, 50, 50))
+                img.save(fallback_path)
+                logging.warning(f"⚠️ Created minimal fallback thumbnail: {fallback_path}")
+                return fallback_path
+            except Exception as last_error:
+                raise Exception(f"All thumbnail generation methods failed. Last error: {last_error}")
     
     # Download image to OUTPUT directory with UNIQUE filename
     # Match video naming pattern: thumb_{hash}_{topic}_{type}.png
@@ -256,9 +395,15 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
     image = ImageOps.fit(image, dimensions, method=Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(image)
     
-    # Get Malayalam headline with CTR psychology
-    emotion = random.choice(["curiosity", "shock", "urgency", "relatable"])
-    malayalam_headline = generate_malayalam_headline(topic, title, emotion, video_type)
+    # Get Malayalam headline with CTR psychology (100% correct, no AI)
+    # Emotion is auto-detected by generate_malayalam_headline based on topic keywords
+    # Pass "curiosity" as default - function will override with smart detection
+    malayalam_headline = generate_malayalam_headline(topic, title, "curiosity", video_type)
+    
+    # Pre-render text validation
+    if not malayalam_headline or len(malayalam_headline.strip()) == 0:
+        logging.error("⚠️ Empty headline generated, using fallback text")
+        malayalam_headline = "നോക്ക്!" if video_type == "short" else "നോക്ക് ഇത്!"
     
     # Validate headline before proceeding
     from services.thumbnail_playbook import validate_thumbnail_production_ready, get_color_combo_recommendation
@@ -266,7 +411,7 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
     validation = validate_thumbnail_production_ready(path, malayalam_headline, video_type)
     if not validation["passed"]:
         logging.warning(f"⚠️ Thumbnail validation issues: {validation['issues']}")
-        # For production, could regenerate or use fallback
+        # Continue anyway - validation is advisory
     
     
     # KERALA CTR COLORS - Override with proven Kerala winners
@@ -285,58 +430,38 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
     
     logging.info(f"🎨 KERALA CTR colors: {color_combo_name}")
     
-    # Load Malayalam font
+    # Load Malayalam font using standardized system
     from services.thumbnail_playbook import get_font_recommendation
     
     try:
         font_path = get_font_recommendation()
-        font = ImageFont.truetype(font_path, font_size)
     except Exception as e:
         logging.error(f"Font loading failed: {e}")
         raise Exception("Malayalam font required for thumbnails. Install Noto Sans Malayalam or Nirmala UI.")
     
-    # MASSIVE TEXT RENDERING - Kerala optimized
+    # Validate text before rendering
+    if not malayalam_headline or len(malayalam_headline.strip()) == 0:
+        logging.warning("⚠️ Empty headline generated, using fallback")
+        malayalam_headline = "നോക്ക്!" if video_type == "short" else "നോക്ക് ഇത്!"
+    
+    # Use unified text rendering function for consistency
     text = malayalam_headline
-    w, h = image.size
+    render_text_overlay(image, text, video_type, font_path, font_size, text_color, stroke_color)
     
-    # Get text size for dynamic positioning
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
+    # Apply professional effects
+    image = apply_professional_effects(image)
     
-    # SMART AUTO-SIZING: Reduce if text too wide (with 300px it might be huge!)
-    max_width = int(w * 0.90)  # Fill 90% width maximum
-    attempts = 0
-    while text_width > max_width and attempts < 10:
-        font_size = int(font_size * 0.95)  # Reduce by 5%
-        font = ImageFont.truetype(font_path, font_size)
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        attempts += 1
+    # Save with high quality
+    image.save(path, quality=95, optimize=True)
     
-    logging.info(f"📏 Final font: {font_size}px (fills {int(text_width/w*100)}% width)")
+    # Post-render validation and quality checks
+    if not os.path.exists(path):
+        raise Exception(f"Thumbnail file was not created at {path}")
     
-    # POSITIONING: Top-center for instant visibility
-    x = w / 2  # Always center
-    if video_type == "long":
-        y = h / 5  # Top fifth
-    else:
-        # Shorts: Very top for maximum impact
-        y = text_height / 2 + 60  # Just below top edge
+    file_size = os.path.getsize(path)
+    if file_size < 1000:  # Less than 1KB is suspicious
+        logging.warning(f"⚠️ Thumbnail file size is very small: {file_size} bytes")
     
-    # ULTRA-THICK STROKES for Kerala readability (12px for shorts!)
-    stroke_width = 12 if video_type == "short" else 8
-    
-    # Multi-layer rendering for maximum contrast
-    # Outer dark stroke
-    draw.text((x, y), text, font=font, fill="black", anchor="mm", stroke_width=stroke_width+2, stroke_fill="black")
-    # Main text with Kerala CTR color
-    draw.text((x, y), text, font=font, fill=text_color, anchor="mm", stroke_width=stroke_width, stroke_fill=stroke_color)
-    
-    image.save(path)
-    
-    # Final validation
     final_validation = validate_thumbnail_production_ready(path, text, video_type)
     if final_validation["passed"]:
         logging.info(f"✅ Thumbnail passed production validation")
@@ -350,6 +475,7 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
         logging.warning(f"⚠️ YPP Safety concerns: {ypp_check['violations']}")
     
     safe_text = text.encode('ascii', 'replace').decode('ascii')
+    logging.info(f"✅ Thumbnail created ({video_type}, {color_combo_name}): {safe_text}")
     print(f"Thumbnail created ({video_type}, {color_combo_name}): {safe_text}")
     
     return path
