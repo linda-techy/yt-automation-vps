@@ -111,6 +111,16 @@ def main():
     
     # Keep alive loop
     while True:
+        # Check for scheduled uploads first (runs every minute)
+        try:
+            from services.upload_worker import check_and_upload_pending
+            upload_results = check_and_upload_pending()
+            if upload_results["uploaded"] > 0:
+                logging.info(f"📤 Upload worker: {upload_results['uploaded']} videos uploaded, {upload_results['failed']} failed, {upload_results['pending']} pending")
+        except Exception as e:
+            logging.warning(f"Upload worker error: {e}")
+        
+        # Then check for pipeline jobs
         schedule.run_pending()
         time.sleep(60)  # Check every minute
 

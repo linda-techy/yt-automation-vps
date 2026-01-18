@@ -156,37 +156,68 @@ def get_videos_safe_to_delete() -> List[Dict]:
     
     return safe_videos
 
-def cleanup_uploaded_videos(max_age_hours: int = 24) -> int:
+def cleanup_uploaded_videos(max_age_hours: int = 48) -> int:
     """
-    Delete videos that have been successfully uploaded and are older than max_age_hours.
+    Delete videos that have been successfully uploaded and published.
     
     This ensures we keep videos for a safety buffer period even after upload, 
     in case YouTube processing fails or we need to re-upload.
     
+    CRITICAL: Deletion is based on scheduled publish time, not upload time.
+    Videos scheduled for future publication are NEVER deleted.
+    
     Args:
-        max_age_hours: Only delete videos uploaded more than this many hours ago
+        max_age_hours: Only delete videos published more than this many hours ago
     
     Returns:
         Number of files deleted
     """
     db = load_lifecycle_db()
     deleted_count = 0
-    cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=max_age_hours)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
     
     for video in get_videos_safe_to_delete():
-        # Check age
-        uploaded_at_str = video.get("uploaded_at")
-        if not uploaded_at_str:
-            continue
-        
-        try:
-            uploaded_at = datetime.datetime.fromisoformat(uploaded_at_str)
-        except:
-            continue
-        
-        if uploaded_at > cutoff_time:
-            # Too recent, keep it
-            continue
+        # NEW: Check scheduled publish time first
+        scheduled_time_str = video.get("scheduled_time")
+        if scheduled_time_str:
+            try:
+                scheduled_time = datetime.datetime.fromisoformat(scheduled_time_str.replace('Z', '+00:00'))
+                
+                # Don't delete if scheduled for future publication
+                if scheduled_time > now_utc:
+                    logging.debug(f"[Lifecycle] Keeping future-scheduled video: {os.path.basename(video['file_path'])} (publishes {scheduled_time})")
+                    continue  # Keep future-scheduled videos
+                
+                # Calculate age from publish time, not upload time
+                age_hours = (now_utc - scheduled_time).total_seconds() / 3600
+                if age_hours < max_age_hours:
+                    logging.debug(f"[Lifecycle] Keeping recent video: {os.path.basename(video['file_path'])} (published {age_hours:.1f}h ago)")
+                    continue  # Too recent, keep it
+            except Exception as e:
+                logging.warning(f"[Lifecycle] Failed to parse scheduled_time: {e}, falling back to upload time")
+                # Fallback to upload time check
+                uploaded_at_str = video.get("uploaded_at")
+                if uploaded_at_str:
+                    try:
+                        uploaded_at = datetime.datetime.fromisoformat(uploaded_at_str)
+                        cutoff_time = now_utc - datetime.timedelta(hours=max_age_hours)
+                        if uploaded_at > cutoff_time:
+                            continue
+                    except:
+                        continue
+        else:
+            # No scheduled time, use upload time as fallback
+            uploaded_at_str = video.get("uploaded_at")
+            if not uploaded_at_str:
+                continue
+            
+            try:
+                uploaded_at = datetime.datetime.fromisoformat(uploaded_at_str)
+                cutoff_time = now_utc - datetime.timedelta(hours=max_age_hours)
+                if uploaded_at > cutoff_time:
+                    continue
+            except:
+                continue
         
         # Safe to delete
         file_path = video["file_path"]

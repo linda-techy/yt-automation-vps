@@ -89,6 +89,33 @@ def get_pending_uploads():
     status = load_upload_status()
     return status.get("pending_uploads", [])
 
+def get_upload_time_from_scheduled(scheduled_time_str: str, buffer_hours: int = 1) -> datetime.datetime:
+    """
+    Extract upload time from scheduled publish time.
+    
+    Upload should happen before scheduled publish time to ensure YouTube 
+    processing completes before publication.
+    
+    Args:
+        scheduled_time_str: ISO format scheduled publish time (UTC)
+        buffer_hours: Hours before publish time to upload (default: 1 hour)
+    
+    Returns:
+        datetime.datetime: Upload time in UTC
+    """
+    try:
+        # Parse scheduled time (handle both 'Z' and '+00:00' formats)
+        scheduled = datetime.datetime.fromisoformat(scheduled_time_str.replace('Z', '+00:00'))
+        
+        # Calculate upload time (buffer_hours before scheduled time)
+        upload_time = scheduled - datetime.timedelta(hours=buffer_hours)
+        
+        return upload_time
+    except Exception as e:
+        logging.error(f"Failed to parse scheduled_time: {scheduled_time_str}, error: {e}")
+        # Fallback: return current time + 1 hour
+        return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+
 def retry_pending_uploads(upload_function):
     """Retry uploading pending files from previous runs"""
     pending = get_pending_uploads()

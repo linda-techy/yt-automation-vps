@@ -703,8 +703,8 @@ def run_unified_pipeline():
             
             logging.info(f"  ✅ Short {i+1} Ready")
         
-        # ========== STEP 7: Upload & Schedule (ALL videos) ==========
-        logging.info("STEP 7: Uploading & Scheduling Videos...")
+        # ========== STEP 7: Queue Videos for Scheduled Upload ==========
+        logging.info("STEP 7: Queueing Videos for Scheduled Upload...")
         
         # Schedule long-form video FIRST (main content) - Kerala primetime
         long_publish_time = get_long_video_publish_time()
@@ -733,92 +733,64 @@ def run_unified_pipeline():
             # Validate upload assets
             validate_upload_ready(long_video_path, long_thumbnail, long_seo_validated)
             
-            # Check quota
-            quota_status = check_quota_available(required_units=1600)
-            if not quota_status['available']:
-                raise Exception(
-                    f"Daily quota exhausted: {quota_status['used']}/{quota_status['limit']} "
-                    f"(resets at {quota_status['reset_at']})"
-                )
-            logging.info(f"Quota check: {quota_status['remaining']} units remaining")
+            # Quality gate for long video
+            logging.info("🔍 Quality Scoring: Long Video...")
+            from services.quality_scorer import quality_scorer
             
-            # Convert time to YouTube UTC format
-            youtube_publish_time = convert_to_youtube_time(long_publish_time)
+            long_duration = None
+            try:
+                from moviepy.editor import VideoFileClip
+                with VideoFileClip(long_video_path) as clip:
+                    long_duration = clip.duration
+            except:
+                pass
             
-            # Track as pending upload
-        track_pending_upload(long_video_path, "long", topic, long_publish_time, {"title": long_script.get('title')})
-        
-        # Quality gate for long video
-        logging.info("🔍 Quality Scoring: Long Video...")
-        from services.quality_scorer import quality_scorer
-        
-        long_duration = None
-        try:
-            from moviepy.editor import VideoFileClip
-            with VideoFileClip(long_video_path) as clip:
-                long_duration = clip.duration
-        except:
-            pass
-        
-        # Create script_data dict for quality scorer
-        long_script_data = {
-            "script": " ".join([s.get('content', '') for s in long_script.get('sections', [])]),
-            "title": long_script.get('title', topic),
-            "visual_cues": [c for s in long_script.get('sections', []) for c in s.get('visual_cues', [])]
-        }
-        
-        long_quality = quality_scorer.score_complete(
-            script_data=long_script_data,
-            video_path=long_video_path,
-            seo_metadata=long_seo_validated,
-            topic=topic
-        )
-        
-        if not long_quality["passed"]:
-            logging.error(f"❌ Long video quality gate FAILED: {long_quality['overall_score']:.2f}/10")
-            raise Exception(f"Long video quality gate failed. Score: {long_quality['overall_score']:.2f}/10")
-        
-        logging.info(f"✅ Long video quality PASSED: {long_quality['overall_score']:.2f}/10")
-        
-        long_video_id = upload_short(long_video_path, long_seo_validated, publish_at=long_publish_time, thumbnail_path=long_thumbnail)
-        logging.info(f"✅ Long video uploaded: {long_video_id}")
-        
-        # Mark as uploaded in lifecycle manager
-        if long_video_id:
-            mark_upload_success(long_video_path, long_video_id)
-        
-        # Mark as uploaded
-        if long_video_id:
-            mark_as_uploaded(long_video_path, long_video_id)
+            # Create script_data dict for quality scorer
+            long_script_data = {
+                "script": " ".join([s.get('content', '') for s in long_script.get('sections', [])]),
+                "title": long_script.get('title', topic),
+                "visual_cues": [c for s in long_script.get('sections', []) for c in s.get('visual_cues', [])]
+            }
             
-            # ARCHIVE CONTENT
-            archive_content(
+            long_quality = quality_scorer.score_complete(
+                script_data=long_script_data,
+                video_path=long_video_path,
+                seo_metadata=long_seo_validated,
+                topic=topic
+            )
+            
+            if not long_quality["passed"]:
+                logging.error(f"❌ Long video quality gate FAILED: {long_quality['overall_score']:.2f}/10")
+                raise Exception(f"Long video quality gate failed. Score: {long_quality['overall_score']:.2f}/10")
+            
+            logging.info(f"✅ Long video quality PASSED: {long_quality['overall_score']:.2f}/10")
+            
+            # Queue for scheduled upload instead of uploading immediately
+            track_pending_upload(
+                file_path=long_video_path,
                 video_type="long",
                 topic=topic,
-                script=long_script,
-                seo=long_seo,
-                thumbnail_path=long_thumbnail,
-                video_id=long_video_id
+                scheduled_time=long_publish_time,
+                metadata={
+                    "title": long_script.get('title'),
+                    "seo_metadata": long_seo_validated,
+                    "thumbnail_path": long_thumbnail,
+                    "script": long_script,
+                    "quality_score": long_quality['overall_score']
+                }
             )
+            logging.info(f"✅ Long video queued for scheduled upload at {long_publish_time}")
+            long_video_id = None  # Will be set after upload completes
         
-        # Post engagement comment on long video
-        from services.youtube_uploader import insert_comment
-        if long_video_id:
-            try:
-                # Extract question from long script if available
-                comment_q = "What do you think? Share your thoughts! 💭"
-                insert_comment(long_video_id, comment_q)
-            except Exception as e:
-                logging.warning(f"Comment posting failed: {e}")
-        
-        # Log long video to history
+        # Log long video to history (with None video_id until uploaded)
         log_upload_history({
-            "video_id": long_video_id,
+            "video_id": long_video_id or "pending",
             "title": long_script.get('title'),
             "topic": topic,
             "publish_at": long_publish_time,
             "filename": os.path.basename(long_video_path),
-            "format": "long-form-16:9"
+            "format": "long-form-16:9",
+            "status": "queued" if not long_video_id else "uploaded"
         })
         
         # Schedule shorts over next 5 days (1 per day)
@@ -828,9 +800,6 @@ def run_unified_pipeline():
         for i, short_data in enumerate(short_videos):
             # Schedule using Kerala scrolling slots (6:30 PM, 12:30 PM, 10 PM, etc.)
             short_time = get_shorts_publish_time(i, long_publish_time)
-            
-            # Track as pending
-            track_pending_upload(short_data['path'], "short", topic, short_time, {"title": short_data['script'].get('title')})
             
             # Quality gate for short video
             logging.info(f"🔍 Quality Scoring: Short {i+1}...")
@@ -848,57 +817,35 @@ def run_unified_pipeline():
             
             logging.info(f"✅ Short {i+1} quality PASSED: {short_quality['overall_score']:.2f}/10")
             
-            short_video_id = upload_short(
-                short_data['path'], 
-                short_data['seo'], 
-                publish_at=short_time,
-                thumbnail_path=short_data['thumbnail']
+            # Queue for scheduled upload instead of uploading immediately
+            track_pending_upload(
+                file_path=short_data['path'],
+                video_type="short",
+                topic=topic,
+                scheduled_time=short_time,
+                metadata={
+                    "title": short_data['script'].get('title'),
+                    "seo_metadata": short_data['seo'],
+                    "thumbnail_path": short_data['thumbnail'],
+                    "script": short_data['script'],
+                    "quality_score": short_quality['overall_score'],
+                    "index": i,
+                    "linked_long_video": long_video_id  # Will be updated after long video uploads
+                }
             )
+            logging.info(f"  ✅ Short {i+1} queued for scheduled upload at {short_time}")
             
-            # Mark as uploaded in lifecycle manager
-            if short_video_id:
-                mark_upload_success(short_data['path'], short_video_id)
-            
-            # Mark as uploaded
-            if short_video_id:
-                mark_as_uploaded(short_data['path'], short_video_id)
-                
-                # ARCHIVE CONTENT
-                archive_content(
-                    video_type=f"short_{i+1}",
-                    topic=topic,
-                    script=short_data['script'],
-                    seo=short_data.get('seo', ''),
-                    thumbnail_path=short_data['thumbnail'],
-                    video_id=short_video_id
-                )
-            
-            # Add PINNED link to long video (CRITICAL for traffic conversion)
-            if short_video_id and long_video_id:
-                try:
-                    from services.youtube_uploader import insert_comment, pin_comment
-                    link_comment = f"📺 Watch the full breakdown: https://youtube.com/watch?v={long_video_id}"
-                    comment_id = insert_comment(short_video_id, link_comment)
-                    
-                    # PIN the comment for maximum visibility (5-10x more clicks!)
-                    if comment_id:
-                        pin_comment(comment_id)
-                        logging.info(f"  ✅ Pinned cross-promotion comment on Short {i+1}")
-                except Exception as e:
-                    logging.warning(f"  ⚠️ Comment/pin failed on Short {i+1}: {e}")
-            
-            # Log short to history
+            # Log short to history (with None video_id until uploaded)
             log_upload_history({
-                "video_id": short_video_id,
+                "video_id": "pending",
                 "title": short_data['script'].get('title'),
                 "topic": topic,
                 "publish_at": short_time,
                 "filename": os.path.basename(short_data['path']),
                 "format": "short-9:16",
-                "linked_long_video": long_video_id
+                "linked_long_video": long_video_id,
+                "status": "queued"
             })
-            
-            logging.info(f"  ✅ Short {i+1} scheduled: {short_time}")
         
         # ========== STEP 8: Save Script Hashes (prevent future duplication) ==========
         save_script_hash(full_long_text)
