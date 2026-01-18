@@ -95,7 +95,8 @@ def validate_video(video_path, expected_min_duration=10, expected_format="9:16")
         # Check codec (basic)
         try:
             results["codec"] = clip.filename.split('.')[-1]
-        except:
+        except Exception as e:
+            logging.debug(f"[Video Validator] Failed to detect codec: {e}")
             results["codec"] = "unknown"
         
         # Close clip

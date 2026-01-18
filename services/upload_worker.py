@@ -122,7 +122,20 @@ def check_and_upload_pending() -> Dict[str, int]:
                 logging.warning(f"Quota exhausted, skipping upload: {quota_status['used']}/{quota_status['limit']}")
                 continue  # Try again next minute
         except Exception as e:
-            logging.warning(f"Quota check failed: {e}, proceeding anyway")
+            logging.error(f"Quota check failed: {e}, aborting upload")
+            results["failed"] += 1
+            # Update item with error for retry
+            item["attempts"] = attempts + 1
+            item["last_error"] = f"Quota check failed: {e}"
+            item["last_attempt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            # Save updated status
+            status = load_upload_status()
+            for idx, pending_item in enumerate(status.get("pending_uploads", [])):
+                if pending_item.get("file_path") == file_path:
+                    status["pending_uploads"][idx] = item
+                    break
+            save_upload_status(status)
+            continue
         
         # Time to upload!
         logging.info(f"⏰ Upload time reached for: {os.path.basename(file_path)}")

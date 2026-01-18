@@ -90,7 +90,8 @@ def create_fallback_thumbnail(title, topic, output_path="videos/output/fallback_
                         font_path = fp  # Store for later use
                         font = ImageFont.truetype(fp, font_size)
                         break
-                except:
+                except Exception as e:
+                    logging.debug(f"[Fallback Thumbnail] Font load failed for {fp}: {e}")
                     continue
             if not font:
                 font = ImageFont.load_default()
@@ -116,8 +117,9 @@ def create_fallback_thumbnail(title, topic, output_path="videos/output/fallback_
             font_size = int(font_size * 0.95)
             try:
                 font = ImageFont.truetype(font_path, font_size)
-            except:
+            except Exception as e:
                 # If font reload fails, break to avoid infinite loop
+                logging.debug(f"[Fallback Thumbnail] Font reload failed: {e}")
                 break
             bbox = draw.textbbox((0, 0), text, font=font)
             text_width = bbox[2] - bbox[0]

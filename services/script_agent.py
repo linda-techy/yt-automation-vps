@@ -183,7 +183,8 @@ def perceive_node(state: CognitiveState) -> dict:
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         perception = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[ScriptAgent] Failed to parse perception JSON: {e}, using fallback")
         perception = {"core_concept": state["topic"], "emotional_hook": "curiosity"}
     
     print(f"[Brain] Perceived: {perception.get('core_concept', 'Unknown')[:50]}...")
@@ -267,7 +268,8 @@ def draft_node(state: CognitiveState) -> dict:
         logging.warning(f"[Brain] Draft parsing failed: {e}")
         try:
             draft = {"script": response.content, "visual_cues": [], "error": str(e)}
-        except:
+        except Exception as fallback_error:
+            logging.warning(f"[ScriptAgent] Failed to extract draft content: {fallback_error}")
             draft = {"script": "", "visual_cues": [], "error": str(e)}
     
     print(f"[Brain] Drafted: '{draft.get('title', 'Untitled')[:40]}...'")
@@ -316,7 +318,8 @@ def refine_node(state: CognitiveState) -> dict:
     try:
         critique_data = json.loads(state["critique"])
         priority = critique_data.get("revision_priority", "general improvement")
-    except:
+    except Exception as e:
+        logging.warning(f"[ScriptAgent] Failed to parse critique JSON: {e}, using default priority")
         priority = "general improvement"
     
     prompt = get_refine_prompt(state["draft"], state["critique"], priority, ctx)
@@ -327,7 +330,8 @@ def refine_node(state: CognitiveState) -> dict:
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         draft = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[ScriptAgent] Failed to parse refine JSON: {e}, keeping existing draft")
         draft = state["draft"]
     
     print(f"[Brain] Refined: Iteration {state['iteration_count'] + 1}")
@@ -343,7 +347,8 @@ def should_continue(state: CognitiveState) -> str:
         critique_data = json.loads(state["critique"])
         verdict = critique_data.get("verdict", "APPROVED")
         score = critique_data.get("overall_score", 8.0)
-    except:
+    except Exception as e:
+        logging.warning(f"[ScriptAgent] Failed to parse critique for decision: {e}, using defaults")
         verdict = "APPROVED"
         score = 8.0
     

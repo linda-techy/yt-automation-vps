@@ -151,7 +151,8 @@ def build_long_video_chunked(audio_path, asset_paths, script_data, output_path="
         for c in chunk_clips:
             try:
                 c.close()
-            except:
+            except Exception as e:
+                logging.debug(f"[Video Builder] Failed to close clip: {e}")
                 pass
         chunk_video.close()
         audio_subclip.close()

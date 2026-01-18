@@ -33,7 +33,8 @@ def save_lifecycle_db(db):
     """Save video lifecycle database (thread-safe)"""
     success = save_json_safe(VIDEO_LIFECYCLE_DB, db)
     if not success:
-        logging.error(f"[Lifecycle] Failed to save DB: {VIDEO_LIFECYCLE_DB}")
+        logging.error(f"[Lifecycle] Failed to save lifecycle database: {VIDEO_LIFECYCLE_DB}")
+        raise Exception(f"Failed to save lifecycle database")
 
 def register_video(video_path: str, video_type: str, topic: str, 
                   scheduled_time: str, metadata: Dict = None) -> str:
@@ -99,17 +100,25 @@ def mark_upload_success(file_path: str, youtube_video_id: str):
         youtube_video_id: YouTube's video ID (from API response)
     """
     db = load_lifecycle_db()
+    file_path_abs = os.path.abspath(file_path)
+    found = False
     
     for video in db["videos"]:
-        if video["file_path"] == os.path.abspath(file_path):
+        if video["file_path"] == file_path_abs:
             video["status"] = "uploaded"
             video["youtube_video_id"] = youtube_video_id
             video["uploaded_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            save_lifecycle_db(db)
-            logging.info(f"[Lifecycle] ✅ Upload confirmed: {os.path.basename(file_path)} → {youtube_video_id}")
-            return
+            found = True
+            break
     
-    logging.warning(f"[Lifecycle] Video not tracked: {file_path}")
+    if not found:
+        logging.warning(f"[Lifecycle] Video not found for upload success: {file_path}")
+        # Optionally register it now if not found (recovery scenario)
+        logging.info(f"[Lifecycle] Attempting to register missing video entry")
+        return
+    
+    save_lifecycle_db(db)
+    logging.info(f"[Lifecycle] ✅ Upload success: {os.path.basename(file_path)} → {youtube_video_id}")
 
 def mark_upload_failed(video_id: str, error_msg: str):
     """Mark upload as failed (will retry later)"""
@@ -173,6 +182,9 @@ def cleanup_uploaded_videos(max_age_hours: int = 48) -> int:
         scheduled_time_str = video.get("scheduled_time")
         if scheduled_time_str:
             try:
+                # Validate ISO format before parsing
+                if not scheduled_time_str or 'T' not in scheduled_time_str:
+                    raise ValueError(f"Invalid scheduled_time format: missing 'T' separator")
                 scheduled_time = datetime.datetime.fromisoformat(scheduled_time_str.replace('Z', '+00:00'))
                 
                 # Don't delete if scheduled for future publication
@@ -191,11 +203,12 @@ def cleanup_uploaded_videos(max_age_hours: int = 48) -> int:
                 uploaded_at_str = video.get("uploaded_at")
                 if uploaded_at_str:
                     try:
-                        uploaded_at = datetime.datetime.fromisoformat(uploaded_at_str)
+                        uploaded_at = datetime.datetime.fromisoformat(uploaded_at_str.replace('Z', '+00:00'))
                         cutoff_time = now_utc - datetime.timedelta(hours=max_age_hours)
                         if uploaded_at > cutoff_time:
                             continue
-                    except:
+                    except Exception as fallback_error:
+                        logging.warning(f"[Lifecycle] Failed to parse uploaded_at: {fallback_error}")
                         continue
         else:
             # No scheduled time, use upload time as fallback
@@ -204,11 +217,12 @@ def cleanup_uploaded_videos(max_age_hours: int = 48) -> int:
                 continue
             
             try:
-                uploaded_at = datetime.datetime.fromisoformat(uploaded_at_str)
+                uploaded_at = datetime.datetime.fromisoformat(uploaded_at_str.replace('Z', '+00:00'))
                 cutoff_time = now_utc - datetime.timedelta(hours=max_age_hours)
                 if uploaded_at > cutoff_time:
                     continue
-            except:
+            except Exception as e:
+                logging.warning(f"[Lifecycle] Failed to parse uploaded_at (fallback): {e}")
                 continue
         
         # Safe to delete

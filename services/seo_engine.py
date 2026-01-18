@@ -89,7 +89,8 @@ def generate_seo(topic: str) -> dict:
             )
             if footer:
                 description += "\n\n" + footer
-        except:
+        except Exception as e:
+            logging.debug(f"[SEO Engine] Failed to add footer: {e}")
             pass
     
     # Default tags if none found

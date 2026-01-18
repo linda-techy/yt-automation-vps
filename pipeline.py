@@ -179,7 +179,7 @@ def log_upload_history(video_data, history_file="channel/upload_history.json"):
         "topic": video_data.get("topic"),
         "publish_at": video_data.get("publish_at"),
         "filename": video_data.get("filename"),
-        "upload_date": datetime.datetime.now().isoformat(),
+        "upload_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "status": "scheduled"
     })
     

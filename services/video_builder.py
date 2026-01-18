@@ -192,7 +192,8 @@ def build_final_video(audio_path, asset_paths, script_data, output_path="videos/
         txt_clip = TextClip(wm_text, fontsize=40, color='white', font='Arial-Bold').set_opacity(0.3)
         txt_clip = txt_clip.set_position(('right', 'bottom')).set_duration(final_video.duration).margin(right=20, bottom=20, opacity=0)
         final_video = CompositeVideoClip([final_video, txt_clip])
-    except:
+    except Exception as e:
+        logging.debug(f"[Video Builder] Failed to add watermark: {e}")
         pass
     
     # Write

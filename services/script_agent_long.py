@@ -212,7 +212,8 @@ def perceive_long_node(state: DocumentaryState) -> dict:
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         perception = json.loads(content)
-    except:
+    except Exception as e:
+        logging.warning(f"[ScriptAgentLong] Failed to parse perception JSON: {e}, using fallback")
         perception = {"core_thesis": state["topic"]}
     
     safe_thesis = perception.get('core_thesis', '').encode('ascii', 'replace').decode('ascii')

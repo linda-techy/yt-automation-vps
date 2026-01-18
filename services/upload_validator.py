@@ -177,14 +177,25 @@ def is_already_uploaded(video_path, lifecycle_file='channel/video_lifecycle.json
         return False, None
     
     try:
-        with open(lifecycle_file, 'r', encoding='utf-8') as f:
-            lifecycle = json.load(f)
+        # Use thread-safe file locking for consistency
+        from utils.file_locking import load_json_safe
+        lifecycle = load_json_safe(lifecycle_file, default={"videos": []})
+        
+        # Normalize video path to absolute for consistent comparison
+        video_path_abs = os.path.abspath(video_path)
         
         for video in lifecycle.get('videos', []):
-            if video.get('path') == video_path:
-                youtube_id = video.get('youtube_id')
+            # Check by file_path (correct field name, absolute path)
+            if video.get('file_path') == video_path_abs:
+                youtube_id = video.get('youtube_video_id')
                 if youtube_id:
                     logging.info(f"Video already uploaded: {youtube_id} ({video_path})")
+                    return True, youtube_id
+            # Also check legacy 'path' field for backward compatibility
+            elif video.get('path') == video_path_abs:
+                youtube_id = video.get('youtube_id') or video.get('youtube_video_id')
+                if youtube_id:
+                    logging.info(f"Video already uploaded (legacy): {youtube_id} ({video_path})")
                     return True, youtube_id
         
         return False, None
