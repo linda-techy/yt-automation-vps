@@ -161,17 +161,15 @@ def save_script_hash(script, hash_file="channel/script_hashes.txt"):
 def log_upload_history(video_data, history_file="channel/upload_history.json"):
     """
     Logs details of successfully uploaded videos to JSON.
+    Uses file locking for thread-safe writes.
     video_data: dict with keys (video_id, title, topic, publish_at, filename)
     """
-    import json
-    history = []
-    if os.path.exists(history_file):
-        try:
-            with open(history_file, "r", encoding="utf-8") as f:
-                history = json.load(f)
-        except Exception as e:
-            logging.warning(f"Failed to load upload history: {e}")
-            history = []
+    from utils.file_locking import load_json_safe, save_json_safe
+    
+    # Load existing history with file locking
+    history = load_json_safe(history_file, default=[])
+    if not isinstance(history, list):
+        history = []
             
     history.append({
         "video_id": video_data.get("video_id"),
@@ -183,9 +181,12 @@ def log_upload_history(video_data, history_file="channel/upload_history.json"):
         "status": "scheduled"
     })
     
-    with open(history_file, "w", encoding="utf-8") as f:
-        json.dump(history, f, indent=2, ensure_ascii=False)
-    logging.info(f"📝 Logged upload to {history_file}")
+    # Save with file locking (atomic write)
+    success = save_json_safe(history_file, history)
+    if success:
+        logging.info(f"📝 Logged upload to {history_file}")
+    else:
+        logging.error(f"Failed to save upload history to {history_file}")
 
 def run_pipeline():
     """

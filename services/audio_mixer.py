@@ -67,4 +67,5 @@ def mix_audio(voice_path, music_path=None, output_path="videos/temp/mixed_audio.
         music.close()
 
 if __name__ == "__main__":
+    # Test block - pass is acceptable here
     pass

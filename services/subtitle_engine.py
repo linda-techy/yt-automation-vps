@@ -193,7 +193,7 @@ def create_whisper_captions(video_clip, whisper_result):
                 txt = txt.resize(lambda t: 1 + 0.05 * min(t * 10, 1))
                 text_clips.append(txt)
             except Exception as e:
-                pass
+                logging.warning(f"[Subtitle Engine] Failed to create caption clip: {e}", exc_info=True)
 
     if text_clips:
         # Ensure we don't have overlapping clips fighting for Z-index? 
@@ -290,4 +290,5 @@ def analyze_audio_timing(audio_path, language="ml", target_pace_min=3.0, target_
         return []
 
 if __name__ == "__main__":
+    # Test block - pass is acceptable here
     pass

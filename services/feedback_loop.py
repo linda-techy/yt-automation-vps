@@ -10,6 +10,7 @@ Closes the loop between "Upload" and "Planning".
 import os
 import json
 import logging
+from utils.file_locking import load_json_safe, save_json_safe
 
 ANALYTICS_CACHE = "channel/analytics_cache.json"
 WEIGHTS_FILE = "config/brain_weights.json"
@@ -27,16 +28,14 @@ def fetch_recent_performance(max_results=10):
         logging.debug("[FeedbackLoop] No upload history file found")
         return []
     
-    try:
-        with open(history_file, "r", encoding="utf-8") as f:
-            history = json.load(f)
-        
-        # In a real scenario, we would query the API for these IDs.
-        # Here we just return the history metadata.
-        return history[-max_results:] if isinstance(history, list) else []
-    except Exception as e:
-        logging.error(f"[FeedbackLoop] Failed to read upload history: {e}")
-        return []
+    # Load history with file locking
+    history = load_json_safe(history_file, default=[])
+    
+    # In a real scenario, we would query the API for these IDs.
+    # Here we just return the history metadata.
+    if isinstance(history, list):
+        return history[-max_results:]
+    return []
 
 def analyze_performance_trends():
     """
@@ -66,26 +65,18 @@ def analyze_performance_trends():
     # Logic: If recent views are low, increase 'hook_aggression'
     # This is a placeholder for the real logic.
     
-    # Ensure directory exists before writing
-    os.makedirs(os.path.dirname(WEIGHTS_FILE), exist_ok=True)
-    
-    try:
-        with open(WEIGHTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(current_weights, f, indent=2)
+    # Save weights with file locking (atomic write)
+    success = save_json_safe(WEIGHTS_FILE, current_weights)
+    if success:
         logging.info(f"[FeedbackLoop] Updated brain weights: {current_weights}")
-    except Exception as e:
-        logging.error(f"[FeedbackLoop] Failed to write weights file: {e}")
+    else:
+        logging.error(f"[FeedbackLoop] Failed to write weights file: {WEIGHTS_FILE}")
 
 def get_feedback_adjustments():
     """Run by Script Agent to get current tuning parameters."""
-    try:
-        if os.path.exists(WEIGHTS_FILE):
-            with open(WEIGHTS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception as e:
-        logging.warning(f"[FeedbackLoop] Failed to load weights: {e}")
-    
-    return {}  # Return empty dict if file doesn't exist or fails to load
+    # Load weights with file locking
+    weights = load_json_safe(WEIGHTS_FILE, default={})
+    return weights
     
 if __name__ == "__main__":
     analyze_performance_trends()

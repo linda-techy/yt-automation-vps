@@ -194,8 +194,8 @@ def generate_voice_long(text, output_path="videos/temp/voice_long.mp3"):
         for clip in audio_clips:
             try:
                 clip.close()
-            except:
-                pass
+            except Exception as e:
+                logging.debug(f"[TTS Engine] Failed to close audio clip during cleanup: {e}")
 
 if __name__ == "__main__":
     generate_voice("This is a test of the automatic voice generation system.")

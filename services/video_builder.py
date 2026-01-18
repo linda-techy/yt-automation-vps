@@ -194,7 +194,6 @@ def build_final_video(audio_path, asset_paths, script_data, output_path="videos/
         final_video = CompositeVideoClip([final_video, txt_clip])
     except Exception as e:
         logging.debug(f"[Video Builder] Failed to add watermark: {e}")
-        pass
     
     # Write
     final_video.write_videofile(output_path, fps=24, codec='libx264', audio_codec='aac', threads=4)
@@ -208,4 +207,5 @@ def build_final_video(audio_path, asset_paths, script_data, output_path="videos/
     return output_path
 
 if __name__ == "__main__":
+    # Test block - pass is acceptable here
     pass

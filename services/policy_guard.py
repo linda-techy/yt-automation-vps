@@ -96,4 +96,5 @@ def check_script_safety(script_text: str, topic: str) -> dict:
 if __name__ == "__main__":
     # Test
     test_script = "Today we talk about how to hack your neighbor's wifi and steal their data."
-    print(check_script_safety(test_script, "Wifi Hacking"))
+    result = check_script_safety(test_script, "Wifi Hacking")
+    logging.info(f"Policy Guard Test Result: {result}")

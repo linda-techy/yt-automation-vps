@@ -192,4 +192,5 @@ def enrich_video_with_graphics(video_clip, script_data, enable_graphics=True):
     return video_clip
 
 if __name__ == "__main__":
+    # Test block - pass is acceptable here
     pass

@@ -88,8 +88,8 @@ def is_visual_recently_used(query: str, asset_type: str = "pixabay") -> bool:
                 if used_at > cutoff:
                     logging.warning(f"[VisualTracker] Visual recently used: '{query[:40]}...'")
                     return True
-            except:
-                pass
+            except Exception as e:
+                logging.debug(f"[VisualTracker] Failed to parse used_at timestamp: {e}")
     
     return False
 

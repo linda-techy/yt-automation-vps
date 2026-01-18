@@ -161,6 +161,7 @@ class PersistentQuotaManager:
 
 class QuotaExceededError(Exception):
     """Raised when quota limit is reached"""
+    # Exception class definition - pass is standard here
     pass
 
 

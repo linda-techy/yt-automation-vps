@@ -90,69 +90,8 @@ class QuotaExceededError(Exception):
 rate_limiter = YouTubeRateLimiter()
 
 
-
-
-def retry_with_backoff(max_retries=3, backoff_factor=2):
-    """
-    Decorator for retry logic with exponential backoff.
-    
-    Handles:
-    - Network timeouts (ConnectionError, TimeoutError)
-    - Rate limits (429)
-    - Server errors (500, 503)
-    
-    Args:
-        max_retries: Maximum number of retry attempts
-        backoff_factor: Multiplier for wait time (2 = exponential)
-    """
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            retries = 0
-            while retries < max_retries:
-                try:
-                    return func(*args, **kwargs)
-                
-                except (ConnectionError, TimeoutError) as e:
-                    retries += 1
-                    if retries >= max_retries:
-                        logging.error(f"[Retry] {func.__name__} failed after {max_retries} attempts: {e}")
-                        raise
-                    
-                    wait_time = backoff_factor ** retries
-                    logging.warning(
-                        f"[Retry] {func.__name__} attempt {retries}/{max_retries} failed: {e}. "
-                        f"Retrying in {wait_time}s..."
-                    )
-                    time.sleep(wait_time)
-                
-                except QuotaExceededError:
-                    # Don't retry on quota errors
-                    logging.error(f"[Retry] {func.__name__} quota exceeded - no retry")
-                    raise
-                
-                except Exception as e:
-                    # Check if it's a retryable HTTP error
-                    error_str = str(e).lower()
-                    if any(code in error_str for code in ['429', '500', '503']):
-                        retries += 1
-                        if retries >= max_retries:
-                            logging.error(f"[Retry] {func.__name__} failed after {max_retries} attempts: {e}")
-                            raise
-                        
-                        wait_time = backoff_factor ** retries
-                        logging.warning(
-                            f"[Retry] {func.__name__} HTTP error (attempt {retries}/{max_retries}): {e}. "
-                            f"Retrying in {wait_time}s..."
-                        )
-                        time.sleep(wait_time)
-                    else:
-                        # Not retryable, raise immediately
-                        raise
-            
-            return None
-        return wrapper
-    return decorator
+# Import retry logic from centralized utilities (no longer duplicate)
+from utils.errors.retry_decorator import retry_with_backoff
 
 
 if __name__ == "__main__":

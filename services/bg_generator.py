@@ -16,6 +16,7 @@ import requests
 import random
 import concurrent.futures
 import time
+import logging
 from openai import OpenAI
 
 # API Keys
@@ -43,7 +44,7 @@ def generate_ai_image(prompt, output_path, size="1792x1024"):
         raise Exception("OPENAI_API_KEY not found - required for AI image generation")
     
     try:
-        print(f"[AI] Generating: '{prompt[:50]}...'")
+        logging.info(f"[AI] Generating: '{prompt[:50]}...'")
         
         response = openai_client.images.generate(
             model="dall-e-3",
@@ -63,12 +64,63 @@ def generate_ai_image(prompt, output_path, size="1792x1024"):
         with open(output_path, 'wb') as f:
             f.write(img_response.content)
         
-        print(f"[AI] Generated: {os.path.basename(output_path)}")
+        logging.info(f"[AI] Generated: {os.path.basename(output_path)}")
         return output_path
         
     except Exception as e:
-        print(f"[AI] Error: {e}")
+        logging.error(f"[AI] Error: {e}")
         raise
+
+
+def generate_fallback_asset(query, index, orientation="portrait"):
+    """
+    Generate a fallback solid color asset when DALL-E/Pixabay fails.
+    
+    Args:
+        query: Visual cue query (for color selection)
+        index: Asset index
+        orientation: 'portrait' or 'landscape'
+    
+    Returns:
+        Path to generated fallback image, or None if generation fails
+    """
+    try:
+        # Use PIL to create solid color image
+        try:
+            from PIL import Image
+        except ImportError:
+            logging.warning("[Hybrid] PIL not available, cannot generate fallback asset")
+            return None
+        
+        # Determine dimensions based on orientation
+        if orientation == "portrait":
+            width, height = 1080, 1920
+        else:
+            width, height = 1920, 1080
+        
+        # Generate a gradient-like color based on query hash
+        import hashlib
+        hash_val = int(hashlib.md5(query.encode()).hexdigest()[:8], 16)
+        
+        # Create color palette (avoid pure black/white)
+        r = (hash_val % 156) + 50  # 50-205
+        g = ((hash_val // 256) % 156) + 50
+        b = ((hash_val // 65536) % 156) + 50
+        
+        # Create solid color image
+        img = Image.new('RGB', (width, height), color=(r, g, b))
+        
+        # Save to temp directory
+        os.makedirs("videos/temp", exist_ok=True)
+        fallback_path = f"videos/temp/fallback_{index}_{random.randint(1000,9999)}.png"
+        img.save(fallback_path)
+        
+        logging.info(f"[Hybrid] Generated fallback asset: {fallback_path} (color: RGB({r},{g},{b}))")
+        return fallback_path
+        
+    except Exception as e:
+        logging.error(f"[Hybrid] Fallback asset generation failed: {e}")
+        return None
 
 
 def fetch_pixabay_video(query, index, orientation="portrait"):
@@ -92,7 +144,7 @@ def fetch_pixabay_video(query, index, orientation="portrait"):
         keywords = [word for word in query.split() if word.lower() not in stop_words and len(word) > 2]
         clean_query = " ".join(keywords[:4]) if keywords else "technology"
         
-        print(f"[Pixabay] Fetching: '{clean_query[:40]}' ({orientation})")
+        logging.info(f"[Pixabay] Fetching: '{clean_query[:40]}' ({orientation})")
         
         url = "https://pixabay.com/api/videos/"
         params = {
@@ -146,7 +198,7 @@ def fetch_pixabay_video(query, index, orientation="portrait"):
         return (index, None)
         
     except Exception as e:
-        print(f"[Pixabay] Error: {type(e).__name__}")
+        logging.warning(f"[Pixabay] Error for query '{query[:30]}': {type(e).__name__}")
         return (index, None)
 
 
@@ -182,7 +234,7 @@ def fetch_background_videos(visual_cues, orientation="portrait", key_scene_indic
     final_paths = [None] * len(visual_cues)
     
     # Step 1: Generate AI images for key scenes (sequential to manage API rate)
-    print(f"[Hybrid] Generating AI images for {len(key_scene_indices)} key scenes...")
+    logging.info(f"[Hybrid] Generating AI images for {len(key_scene_indices)} key scenes...")
     for idx in sorted(key_scene_indices):
         if idx < len(visual_cues):
             try:
@@ -191,12 +243,12 @@ def fetch_background_videos(visual_cues, orientation="portrait", key_scene_indic
                 path = generate_ai_image(cue, output_path, size=ai_size)
                 final_paths[idx] = path
             except Exception as e:
-                print(f"[Hybrid] AI fallback to Pixabay for index {idx}: {e}")
+                logging.warning(f"[Hybrid] AI fallback to Pixabay for index {idx}: {e}")
                 # Will be filled by Pixabay below
     
     # Step 2: Fetch Pixabay videos for remaining scenes (parallel)
     pixabay_indices = [i for i in range(len(visual_cues)) if final_paths[i] is None]
-    print(f"[Hybrid] Fetching {len(pixabay_indices)} Pixabay videos for B-roll...")
+    logging.info(f"[Hybrid] Fetching {len(pixabay_indices)} Pixabay videos for B-roll...")
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
@@ -208,14 +260,36 @@ def fetch_background_videos(visual_cues, orientation="portrait", key_scene_indic
             if path:
                 final_paths[idx] = path
     
-    # STRICT: Check for missing assets
+    # Check for missing assets and apply fallbacks
     missing = [i for i, p in enumerate(final_paths) if p is None]
     if missing:
-        raise Exception(f"[Hybrid] Failed to generate assets at indices: {missing}. NO FALLBACK.")
+        logging.warning(f"[Hybrid] Missing assets at indices: {missing}, generating fallbacks")
+        for idx in missing:
+            try:
+                # Try to generate fallback asset (solid color placeholder)
+                fallback_path = generate_fallback_asset(
+                    visual_cues[idx] if idx < len(visual_cues) else "abstract motion",
+                    idx,
+                    orientation
+                )
+                if fallback_path and os.path.exists(fallback_path):
+                    final_paths[idx] = fallback_path
+                    logging.info(f"[Hybrid] Generated fallback asset for index {idx}: {fallback_path}")
+                else:
+                    logging.error(f"[Hybrid] Fallback generation failed for index {idx}")
+            except Exception as e:
+                logging.error(f"[Hybrid] Fallback failed for index {idx}: {e}")
+        
+        # Final check - if still missing, raise error (should be rare with fallbacks)
+        still_missing = [i for i, p in enumerate(final_paths) if p is None]
+        if still_missing:
+            raise Exception(f"[Hybrid] Critical: Failed to generate assets at indices: {still_missing} even after fallbacks")
     
     ai_count = len([p for p in final_paths if p and 'ai_scene_' in p])
     video_count = len([p for p in final_paths if p and 'pixabay_' in p])
-    print(f"[Hybrid] Complete: {ai_count} AI images + {video_count} Pixabay videos")
+    fallback_count = len([p for p in final_paths if p and 'fallback_' in p])
+    logging.info(f"[Hybrid] Complete: {ai_count} AI images + {video_count} Pixabay videos" + 
+                 (f" + {fallback_count} fallbacks" if fallback_count > 0 else ""))
     
     return final_paths
 
