@@ -109,7 +109,34 @@ def validate_environment():
         logging.info("Environment validation passed")
 
 def get_script_hash(script):
-    return hashlib.md5(script.encode('utf-8')).hexdigest()
+    """
+    Generate hash for script text.
+    Handles both string and dict inputs (for repurposed scripts).
+    """
+    # If script is a dict, extract text content
+    if isinstance(script, dict):
+        # Try common keys for script text
+        script_text = script.get('script', '') or script.get('content', '')
+        if not script_text:
+            # If no direct text, try to extract from sections
+            sections = script.get('sections', [])
+            if isinstance(sections, list):
+                script_text = " ".join([
+                    str(s.get('content', '')) if isinstance(s, dict) else str(s)
+                    for s in sections
+                ])
+        if not script_text:
+            # Last resort: use title or string representation
+            script_text = str(script.get('title', '')) or str(script)
+    elif isinstance(script, (list, tuple)):
+        # If list, join contents
+        script_text = " ".join(str(item) for item in script)
+    else:
+        # Assume string
+        script_text = str(script)
+    
+    # Now hash the text string
+    return hashlib.md5(script_text.encode('utf-8')).hexdigest()
 
 def is_script_unique(script, hash_file="channel/script_hashes.txt"):
     # Legacy Check (MD5) - Fast for exact duplicates
@@ -523,7 +550,14 @@ def run_unified_pipeline():
             return
             
         for i, short in enumerate(shorts_scripts):
-            if not is_script_unique(short.get('script', '')):
+            # Extract script text - handle both dict and string formats
+            script_text = short.get('script', '') if isinstance(short, dict) else str(short)
+            
+            # If script_text is still a dict, extract text content
+            if isinstance(script_text, dict):
+                script_text = script_text.get('content', '') or script_text.get('text', '') or str(script_text)
+            
+            if not is_script_unique(script_text):
                 logging.warning(f"⚠️ Short {i+1} is duplicate. Skipping this short.")
                 shorts_scripts[i] = None  # Mark for skipping
                 
@@ -898,7 +932,14 @@ def run_unified_pipeline():
         # ========== STEP 8: Save Script Hashes (prevent future duplication) ==========
         save_script_hash(full_long_text)
         for short in shorts_scripts:
-            save_script_hash(short.get('script', ''))
+            # Extract script text - handle both dict and string formats
+            script_text = short.get('script', '') if isinstance(short, dict) else str(short)
+            
+            # If script_text is still a dict, extract text content
+            if isinstance(script_text, dict):
+                script_text = script_text.get('content', '') or script_text.get('text', '') or str(script_text)
+            
+            save_script_hash(script_text)
         
         logging.info("="*60)
         logging.info(f"✅ SUCCESS! Published 1 Long + {len(short_videos)} Shorts")

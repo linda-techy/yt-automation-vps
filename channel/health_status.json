@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-01-19T02:09:09.339411",
+  "disk": {
+    "free_gb": 23.96,
+    "total_gb": 76.8,
+    "used_percent": 68.8,
+    "healthy": true
+  },
+  "memory": {
+    "available_gb": 1.81,
+    "total_gb": 15.65,
+    "used_percent": 88.4,
+    "healthy": false
+  },
+  "dependencies": {
+    "dependencies": {
+      "ffmpeg": "C:\\Users\\linda\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0.1-full_build\\bin\\ffmpeg.EXE",
+      "openai_key": true,
+      "youtube_credentials": true,
+      "python_packages": true
+    },
+    "healthy": true
+  },
+  "permissions": {
+    "healthy": true,
+    "issues": []
+  },
+  "overall_healthy": false
+}
