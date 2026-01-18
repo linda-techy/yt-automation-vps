@@ -185,6 +185,83 @@ def get_critique_prompt(script: dict, ctx: dict) -> str:
 
 
 # ============================================================================
+# JSON EXTRACTION HELPER
+# ============================================================================
+
+def extract_json_from_response(content: str) -> Optional[str]:
+    """
+    Extracts JSON from various LLM response formats:
+    - Markdown code blocks (```json ... ```)
+    - Plain JSON
+    - Markdown text with **Header**: patterns
+    - JSON: prefix
+    - Refusal messages (returns None)
+    
+    Returns:
+        str: Extracted JSON string, or None if refusal detected
+    """
+    if not content or not isinstance(content, str):
+        return None
+    
+    content = content.strip()
+    
+    # Check for LLM refusals
+    refusal_patterns = [
+        "I'm sorry",
+        "I can't fulfill",
+        "I cannot",
+        "unable to",
+        "not appropriate",
+        "cannot complete",
+        "refuse to"
+    ]
+    
+    content_lower = content.lower()
+    if any(pattern.lower() in content_lower for pattern in refusal_patterns):
+        logging.warning("[DocBrain] LLM refusal detected in response")
+        return None
+    
+    # Extract from markdown code blocks (```json)
+    if "```json" in content:
+        parts = content.split("```json")
+        if len(parts) > 1:
+            content = parts[1].split("```")[0].strip()
+    elif "```" in content:
+        # Generic code block
+        parts = content.split("```")
+        if len(parts) >= 2:
+            content = parts[1].strip()
+            if content.startswith("json"):
+                content = content[4:].strip()
+    
+    # Extract JSON: prefix
+    if "JSON:" in content:
+        json_start = content.find("JSON:") + 5
+        content = content[json_start:].strip()
+    
+    # Try to extract JSON object using balanced braces
+    brace_count = 0
+    start_idx = -1
+    for i, char in enumerate(content):
+        if char == '{':
+            if brace_count == 0:
+                start_idx = i
+            brace_count += 1
+        elif char == '}':
+            brace_count -= 1
+            if brace_count == 0 and start_idx >= 0:
+                # Found complete JSON object
+                return content[start_idx:i+1]
+    
+    # If no balanced braces found, return content as-is (might be plain JSON)
+    # But check if it looks like JSON (starts with { or [)
+    if content.startswith('{') or content.startswith('['):
+        return content
+    
+    return None
+
+
+# ============================================================================
 # COGNITIVE NODES
 # ============================================================================
 
@@ -221,10 +298,17 @@ def research_long_node(state: DocumentaryState) -> dict:
             compress_context=True
         )
         
-        content = response.content
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        research = json.loads(content)
+        # Use standardized JSON extraction
+        extracted_json = extract_json_from_response(response.content)
+        if extracted_json is None:
+            logging.warning(f"[DocBrain] Failed to extract JSON from research response, using fallback")
+            research = {"key_statistics": [], "case_studies": []}
+        else:
+            try:
+                research = json.loads(extracted_json)
+            except json.JSONDecodeError as e:
+                logging.warning(f"[DocBrain] Research parsing failed: {e}, using fallback")
+                research = {"key_statistics": [], "case_studies": []}
     except Exception as e:
         logging.warning(f"[DocBrain] Research parsing failed: {e}, using fallback")
         research = {"key_statistics": [], "case_studies": []}
@@ -247,10 +331,21 @@ def structure_node(state: DocumentaryState) -> dict:
             compress_context=True
         )
         
-        content = response.content
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        structure = json.loads(content)
+        # Use standardized JSON extraction
+        extracted_json = extract_json_from_response(response.content)
+        if extracted_json is None:
+            logging.warning(f"[DocBrain] Failed to extract JSON from structure response, using fallback")
+            structure = {"sections": [{"name": "HOOK"}, {"name": "INTRO"}, 
+                                       {"name": "PART 1"}, {"name": "PART 2"}, 
+                                       {"name": "PART 3"}, {"name": "OUTRO"}]}
+        else:
+            try:
+                structure = json.loads(extracted_json)
+            except json.JSONDecodeError as e:
+                logging.warning(f"[DocBrain] Structure parsing failed: {e}, using fallback")
+                structure = {"sections": [{"name": "HOOK"}, {"name": "INTRO"}, 
+                                           {"name": "PART 1"}, {"name": "PART 2"}, 
+                                           {"name": "PART 3"}, {"name": "OUTRO"}]}
     except Exception as e:
         logging.warning(f"[DocBrain] Structure parsing failed: {e}, using fallback")
         structure = {"sections": [{"name": "HOOK"}, {"name": "INTRO"}, 
@@ -291,62 +386,20 @@ def draft_sections_node(state: DocumentaryState) -> dict:
                 compress_context=True
             )
             
-            content = response.content.strip()
+            # Use standardized JSON extraction helper
+            extracted_json = extract_json_from_response(response.content)
             
-            # Extract JSON if wrapped in code blocks
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                # Try to extract from generic code block
-                parts = content.split("```")
-                if len(parts) >= 2:
-                    content = parts[1].strip()
-                    if content.startswith("json"):
-                        content = content[4:].strip()
+            if extracted_json is None:
+                # Refusal or empty - will be handled by fallback
+                raise ValueError("LLM refusal or empty response detected")
             
-            # Validate content is not empty
-            if not content or content == "":
-                raise ValueError("Empty response from LLM")
-            
-            # Try to parse JSON with better error handling
+            # Try to parse JSON
             try:
-                section = json.loads(content)
+                section = json.loads(extracted_json)
             except json.JSONDecodeError as json_error:
-                # Log the actual content for debugging
-                logging.error(f"[DocBrain] JSON decode error. Response preview: {content[:200]}...")
-                # Try to extract JSON object manually with improved regex for nested structures
-                import re
-                # Better regex that handles nested braces more reliably
-                # Try balanced brace matching
-                brace_count = 0
-                start_idx = -1
-                for i, char in enumerate(content):
-                    if char == '{':
-                        if brace_count == 0:
-                            start_idx = i
-                        brace_count += 1
-                    elif char == '}':
-                        brace_count -= 1
-                        if brace_count == 0 and start_idx >= 0:
-                            # Found a complete JSON object
-                            json_str = content[start_idx:i+1]
-                            try:
-                                section = json.loads(json_str)
-                                logging.info(f"[DocBrain] Recovered JSON from balanced braces")
-                                break
-                            except:
-                                pass
-                else:
-                    # Fallback to simple regex if balanced matching failed
-                    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content)
-                    if json_match:
-                        try:
-                            section = json.loads(json_match.group(0))
-                            logging.info(f"[DocBrain] Recovered JSON from partial response")
-                        except:
-                            raise json_error
-                    else:
-                        raise json_error
+                # Log for debugging
+                logging.error(f"[DocBrain] JSON decode error after extraction. Preview: {extracted_json[:200]}...")
+                raise json_error
         except Exception as e:
             # Retry once with more explicit prompt
             try:
@@ -368,21 +421,17 @@ Respond with ONLY the JSON object, nothing else."""
                     [HumanMessage(content=retry_prompt)],
                     compress_context=False  # Don't compress on retry
                 )
-                content = response.content.strip()
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    parts = content.split("```")
-                    if len(parts) >= 2:
-                        content = parts[1].strip()
-                        if content.startswith("json"):
-                            content = content[4:].strip()
+                # Use standardized JSON extraction on retry
+                extracted_json = extract_json_from_response(response.content)
                 
-                if content and content != "":
-                    section = json.loads(content)
+                if extracted_json is None:
+                    raise ValueError("Retry also returned refusal or empty response")
+                
+                try:
+                    section = json.loads(extracted_json)
                     logging.info(f"[DocBrain] Retry successful - parsed JSON")
-                else:
-                    raise ValueError("Empty response on retry")
+                except json.JSONDecodeError as retry_json_error:
+                    raise ValueError(f"Retry JSON parse failed: {retry_json_error}")
             except Exception as retry_error:
                 logging.error(f"[DocBrain] Retry also failed: {retry_error}. Response: {response.content[:200] if 'response' in locals() else 'N/A'}...")
                 # Last resort fallback - create minimal valid section
@@ -454,10 +503,17 @@ def assemble_node(state: DocumentaryState) -> dict:
             compress_context=True
         )
         
-        content = response.content
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        draft = json.loads(content)
+        # Use standardized JSON extraction
+        extracted_json = extract_json_from_response(response.content)
+        if extracted_json is None:
+            logging.warning(f"[DocBrain] Failed to extract JSON from assemble response, using fallback")
+            draft = {"title": state["topic"], "sections": state["sections"]}
+        else:
+            try:
+                draft = json.loads(extracted_json)
+            except json.JSONDecodeError as e:
+                logging.warning(f"[DocBrain] Assemble parsing failed: {e}, using fallback")
+                draft = {"title": state["topic"], "sections": state["sections"]}
     except Exception as e:
         logging.warning(f"[DocBrain] Assemble parsing failed: {e}, using fallback")
         draft = {"title": state["topic"], "sections": state["sections"]}
@@ -504,38 +560,18 @@ def critique_long_node(state: DocumentaryState) -> dict:
             compress_context=True
         )
         
-        content = response.content.strip()
+        # Use standardized JSON extraction
+        extracted_json = extract_json_from_response(response.content)
         
-        # Extract JSON if wrapped in code blocks
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            parts = content.split("```")
-            if len(parts) >= 2:
-                content = parts[1].strip()
-                if content.startswith("json"):
-                    content = content[4:].strip()
+        if extracted_json is None:
+            raise ValueError("LLM refusal or empty response detected")
         
-        # Validate content is not empty
-        if not content or content == "":
-            raise ValueError("Empty response from LLM")
-        
-        # Try to parse JSON with better error handling
+        # Try to parse JSON
         try:
-            critique = json.loads(content)
+            critique = json.loads(extracted_json)
         except json.JSONDecodeError as json_error:
-            logging.error(f"[DocBrain] JSON decode error. Response preview: {content[:200]}...")
-            # Try to extract JSON object manually
-            import re
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content)
-            if json_match:
-                try:
-                    critique = json.loads(json_match.group(0))
-                    logging.info(f"[DocBrain] Recovered JSON from partial response")
-                except:
-                    raise json_error
-            else:
-                raise json_error
+            logging.error(f"[DocBrain] JSON decode error after extraction. Preview: {extracted_json[:200]}...")
+            raise json_error
     except Exception as e:
         # Retry once with more explicit prompt
         try:
@@ -545,21 +581,17 @@ def critique_long_node(state: DocumentaryState) -> dict:
                 [HumanMessage(content=retry_prompt)],
                 compress_context=False  # Don't compress on retry
             )
-            content = response.content.strip()
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                parts = content.split("```")
-                if len(parts) >= 2:
-                    content = parts[1].strip()
-                    if content.startswith("json"):
-                        content = content[4:].strip()
+            # Use standardized JSON extraction on retry
+            extracted_json = extract_json_from_response(response.content)
             
-            if content and content != "":
-                critique = json.loads(content)
+            if extracted_json is None:
+                raise ValueError("Retry also returned refusal or empty response")
+            
+            try:
+                critique = json.loads(extracted_json)
                 logging.info(f"[DocBrain] Retry successful - parsed JSON")
-            else:
-                raise ValueError("Empty response on retry")
+            except json.JSONDecodeError as retry_json_error:
+                raise ValueError(f"Retry JSON parse failed: {retry_json_error}")
         except Exception as retry_error:
             logging.error(f"[DocBrain] Retry also failed: {retry_error}. Response: {response.content[:200] if 'response' in locals() else 'N/A'}...")
             # Fallback with warning

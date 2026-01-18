@@ -876,7 +876,7 @@ def run_unified_pipeline():
         })
         
         # Schedule shorts over next 5 days (1 per day)
-        import datetime
+        # datetime is already imported at module level (line 4)
         base_time = datetime.datetime.fromisoformat(long_publish_time.replace('Z', '+00:00'))
         
         for i, short_data in enumerate(short_videos):

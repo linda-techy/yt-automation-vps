@@ -407,13 +407,9 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
         logging.error("⚠️ Empty headline generated, using fallback text")
         malayalam_headline = "നോക്ക്!" if video_type == "short" else "നോക്ക് ഇത്!"
     
-    # Validate headline before proceeding
-    from services.thumbnail_playbook import validate_thumbnail_production_ready, get_color_combo_recommendation
-    
-    validation = validate_thumbnail_production_ready(path, malayalam_headline, video_type)
-    if not validation["passed"]:
-        logging.warning(f"⚠️ Thumbnail validation issues: {validation['issues']}")
-        # Continue anyway - validation is advisory
+    # Note: Validation moved to after resize and save (line 483)
+    # This prevents false warnings about aspect ratio before resize
+    from services.thumbnail_playbook import get_color_combo_recommendation
     
     
     # KERALA CTR COLORS - Override with proven Kerala winners
@@ -478,6 +474,8 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
     if file_size < 1000:  # Less than 1KB is suspicious
         logging.warning(f"⚠️ Thumbnail file size is very small: {file_size} bytes")
     
+    # Import validation function (moved here to avoid early import)
+    from services.thumbnail_playbook import validate_thumbnail_production_ready
     final_validation = validate_thumbnail_production_ready(path, text, video_type)
     if final_validation["passed"]:
         logging.info(f"✅ Thumbnail passed production validation")
