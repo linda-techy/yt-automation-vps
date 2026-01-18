@@ -123,8 +123,34 @@ def main():
         except Exception as e:
             logging.warning(f"Upload worker error: {e}")
         
-        # Periodic cleanup (every 6 hours)
+        # Periodic health check (every hour)
         now = datetime.datetime.now()
+        if (now - last_health_check_time).total_seconds() >= health_check_interval_hours * 3600:
+            try:
+                from services.health_monitor import get_health_monitor, get_recovery_manager
+                health = get_health_monitor()
+                results = health.run_full_health_check()
+                
+                if not results['overall_healthy']:
+                    logging.warning("⚠️ Periodic health check found issues")
+                    # Log specific issues
+                    if not results['disk']['healthy']:
+                        logging.error(f"Disk space low: {results['disk']['free_gb']}GB free")
+                    if not results['memory']['healthy']:
+                        logging.error(f"Memory low: {results['memory']['available_gb']}GB available")
+                    if not results['dependencies']['healthy']:
+                        missing_deps = [k for k, v in results['dependencies']['dependencies'].items() if not v]
+                        logging.error(f"Missing dependencies: {missing_deps}")
+                    
+                    # Attempt recovery
+                    recovery = get_recovery_manager()
+                    recovery.cleanup_stale_files(max_age_hours=24)
+                
+                last_health_check_time = now
+            except Exception as e:
+                logging.warning(f"Periodic health check error: {e}")
+        
+        # Periodic cleanup (every 6 hours)
         if (now - last_cleanup_time).total_seconds() >= cleanup_interval_hours * 3600:
             try:
                 from services.video_lifecycle_manager import cleanup_uploaded_videos, cleanup_temp_files

@@ -110,14 +110,37 @@ def get_authenticated_service(max_retries=3):
                     
             # Refresh or generate token
             if not credentials or not credentials.valid:
-                if credentials and credentials.expired and credentials.refresh_token:
-                    # Auto-refresh - works on VPS without browser
-                    print(f"[YouTube] Refreshing expired token (attempt {attempt+1}/{max_retries})...")
-                    credentials.refresh(Request())
-                    
-                    # Save refreshed token
-                    with open(TOKEN_FILE, 'wb') as token:
-                        pickle.dump(credentials, token)
+                if credentials and credentials.expired:
+                    if credentials.refresh_token:
+                        # Auto-refresh - works on VPS without browser
+                        try:
+                            print(f"[YouTube] Refreshing expired token (attempt {attempt+1}/{max_retries})...")
+                            credentials.refresh(Request())
+                            
+                            # Save refreshed token
+                            with open(TOKEN_FILE, 'wb') as token:
+                                pickle.dump(credentials, token)
+                            logging.info("[YouTube] Token refreshed successfully")
+                        except Exception as refresh_error:
+                            error_str = str(refresh_error).lower()
+                            if 'invalid_grant' in error_str or 'token has been expired or revoked' in error_str:
+                                # Refresh token expired - need re-authentication
+                                logging.error("[YouTube] Refresh token expired. Re-authentication required.")
+                                logging.error("[YouTube] Delete token.pickle and run generate_token_headless() again")
+                                raise Exception(
+                                    "OAuth refresh token expired. Please re-authenticate by running: "
+                                    "python -c \"from services.youtube_uploader import generate_token_headless; generate_token_headless()\""
+                                )
+                            else:
+                                # Other refresh error - retry
+                                raise refresh_error
+                    else:
+                        # No refresh token - need re-authentication
+                        logging.error("[YouTube] No refresh token available. Re-authentication required.")
+                        raise Exception(
+                            "No refresh token found. Please re-authenticate by running: "
+                            "python -c \"from services.youtube_uploader import generate_token_headless; generate_token_headless()\""
+                        )
                 else:
                     # No valid token - check if we're on a headless system
                     if not os.path.exists(CLIENT_SECRETS_FILE):
@@ -252,12 +275,25 @@ def upload_short(video_path, seo_metadata, publish_at=None, thumbnail_path=None)
         raise Exception("[YouTube] Upload failed after max retries")
     
     # CRITICAL: Consume quota after successful upload
-    if rate_limiter and video_id:
+    if video_id:
         try:
-            rate_limiter.consume('upload')
+            # Use persistent quota manager for accurate tracking
+            from services.quota_manager import get_quota_manager
+            quota_manager = get_quota_manager()
+            quota_manager.record_usage('upload', 1600, metadata=f"video_id:{video_id}")
             logging.info(f"[YouTube] Quota consumed for upload (video_id: {video_id})")
+        except ImportError:
+            # Fallback to rate_limiter if quota_manager not available
+            if rate_limiter:
+                try:
+                    rate_limiter.consume('upload')
+                    logging.info(f"[YouTube] Quota consumed via rate_limiter (video_id: {video_id})")
+                except Exception as e:
+                    logging.warning(f"[YouTube] Failed to record quota usage via rate_limiter: {e}")
+            else:
+                logging.warning(f"[YouTube] No quota tracking available for video_id: {video_id}")
         except Exception as e:
-            logging.warning(f"[YouTube] Failed to record quota usage: {e}")
+            logging.error(f"[YouTube] Failed to record quota usage: {e}", exc_info=True)
     
     # Upload Thumbnail (Separate API call)
     if thumbnail_path and os.path.exists(thumbnail_path):

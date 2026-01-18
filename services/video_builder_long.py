@@ -8,6 +8,8 @@ def build_long_video_chunked(audio_path, asset_paths, script_data, output_path="
     """
     Builds a 10-minute video by rendering 60s chunks to avoid Memory Errors.
     STRICT MODE: Whisper REQUIRED for audio pacing - no fallback.
+    
+    Includes cleanup for partial builds on failure.
     """
     # 1. Audio Setup
     full_audio = AudioFileClip(audio_path)
@@ -29,6 +31,9 @@ def build_long_video_chunked(audio_path, asset_paths, script_data, output_path="
     current_time = 0
     generated_duration = 0
     asset_index = 0
+    
+    # Track temp chunks for cleanup on failure
+    try:
     
     # We need to map scenes to chunks. 
     # Simpler approach: Build clips for the whole timeline, BUT render subclips?
@@ -176,3 +181,23 @@ def build_long_video_chunked(audio_path, asset_paths, script_data, output_path="
     for p in temp_chunks: os.remove(p)
     
     return output_path
+    
+    except Exception as e:
+        # Cleanup temp chunks on failure
+        logging.error(f"[Video Builder] Build failed, cleaning up temp chunks: {e}")
+        for chunk_path in temp_chunks:
+            try:
+                if os.path.exists(chunk_path):
+                    os.remove(chunk_path)
+                    logging.debug(f"[Video Builder] Cleaned up temp chunk: {chunk_path}")
+            except Exception as cleanup_error:
+                logging.warning(f"[Video Builder] Failed to cleanup chunk {chunk_path}: {cleanup_error}")
+        
+        # Clean up output file if partially created
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception as cleanup_error:
+            logging.warning(f"[Video Builder] Failed to cleanup output file: {cleanup_error}")
+        
+        raise

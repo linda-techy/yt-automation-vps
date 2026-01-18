@@ -17,31 +17,23 @@ import logging
 import datetime
 from typing import Dict, List, Optional
 
+from utils.file_locking import load_json_safe, save_json_safe
+
 VIDEO_LIFECYCLE_DB = "channel/video_lifecycle.json"
 
 def load_lifecycle_db():
-    """Load video lifecycle database"""
-    if not os.path.exists(VIDEO_LIFECYCLE_DB):
-        return {
-            "videos": [],
-            "last_cleanup": None
-        }
-    
-    try:
-        with open(VIDEO_LIFECYCLE_DB, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        logging.error(f"[Lifecycle] Failed to load DB: {e}")
-        return {"videos": [], "last_cleanup": None}
+    """Load video lifecycle database (thread-safe)"""
+    default_db = {
+        "videos": [],
+        "last_cleanup": None
+    }
+    return load_json_safe(VIDEO_LIFECYCLE_DB, default=default_db)
 
 def save_lifecycle_db(db):
-    """Save video lifecycle database"""
-    os.makedirs(os.path.dirname(VIDEO_LIFECYCLE_DB), exist_ok=True)
-    try:
-        with open(VIDEO_LIFECYCLE_DB, 'w', encoding='utf-8') as f:
-            json.dump(db, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        logging.error(f"[Lifecycle] Failed to save DB: {e}")
+    """Save video lifecycle database (thread-safe)"""
+    success = save_json_safe(VIDEO_LIFECYCLE_DB, db)
+    if not success:
+        logging.error(f"[Lifecycle] Failed to save DB: {VIDEO_LIFECYCLE_DB}")
 
 def register_video(video_path: str, video_type: str, topic: str, 
                   scheduled_time: str, metadata: Dict = None) -> str:

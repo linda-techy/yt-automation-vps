@@ -62,11 +62,16 @@ class PersistentQuotaManager:
         pacific = pytz.timezone('America/Los_Angeles')
         now = datetime.now(pacific)
         
-        # Next reset is at midnight PT
-        if now.hour < 0:  # Already past midnight
-            reset_at = now.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=1)
+        # Next reset is at midnight PT (00:00:00)
+        # Calculate today's midnight PT
+        today_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # If we're past midnight today, reset is tomorrow's midnight
+        if now >= today_midnight:
+            reset_at = today_midnight + timedelta(days=1)
         else:
-            reset_at = now.replace(hour=23, minute=59, second=59, microsecond=0)
+            # Shouldn't happen, but handle edge case
+            reset_at = today_midnight
             
         return reset_at
         

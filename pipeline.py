@@ -51,12 +51,26 @@ def validate_environment():
     """Validates that all required environment variables and tools are present."""
     import sys
     errors = []
+    warnings = []
     
+    # Required environment variables
     if not os.getenv("OPENAI_API_KEY"):
         errors.append("OPENAI_API_KEY not found in environment")
     
     if not os.getenv("YOUTUBE_CLIENT_SECRET_FILE"):
         errors.append("YOUTUBE_CLIENT_SECRET_FILE not set")
+    
+    # Optional but recommended environment variables
+    if not os.getenv("NEWS_API_KEY"):
+        warnings.append("NEWS_API_KEY not set - topic generation may be limited")
+    
+    if not os.getenv("PIXABAY_API_KEY"):
+        warnings.append("PIXABAY_API_KEY not set - will use free tier with rate limits")
+    
+    # Log warnings
+    if warnings:
+        for warning in warnings:
+            logging.warning(f"Environment Warning: {warning}")
         
     import shutil
     ffmpeg_found = False
@@ -70,7 +84,8 @@ def validate_environment():
             if get_exe():
                 ffmpeg_found = True
                 logging.info(f"Using ImageIO FFmpeg: {get_exe()}")
-        except:
+        except Exception as e:
+            logging.debug(f"ImageIO FFmpeg check failed (non-critical): {e}")
             pass
             
     if not ffmpeg_found:
@@ -131,7 +146,8 @@ def is_script_unique(script, hash_file="channel/script_hashes.txt"):
                 if ratio > 0.6: # If script start is very similar to a past title
                     logging.warning(f"Script reject: Too similar to '{item.get('title')}'")
                     return False
-    except:
+    except Exception as e:
+        logging.debug(f"Script uniqueness check failed (non-critical): {e}")
         pass
 
     return True
@@ -153,7 +169,8 @@ def log_upload_history(video_data, history_file="channel/upload_history.json"):
         try:
             with open(history_file, "r", encoding="utf-8") as f:
                 history = json.load(f)
-        except:
+        except Exception as e:
+            logging.warning(f"Failed to load upload history: {e}")
             history = []
             
     history.append({
@@ -265,7 +282,8 @@ def run_pipeline():
             from moviepy.editor import VideoFileClip
             with VideoFileClip(final_video) as clip:
                 duration = clip.duration
-        except:
+        except Exception as e:
+            logging.debug(f"ImageIO FFmpeg check failed (non-critical): {e}")
             pass
         
         quality_result = quality_scorer.score_complete(
@@ -678,6 +696,17 @@ def run_unified_pipeline():
             # Use pre-generated thumbnail from early stage
             s_thumb = shorts_thumbnails[i] if i < len(shorts_thumbnails) else None
             
+            # Check disk space before building short video
+            import shutil
+            disk_usage = shutil.disk_usage("videos/output")
+            free_gb = disk_usage.free / (1024**3)
+            min_free_gb = 0.5  # Minimum 500MB free for short video build
+            
+            if free_gb < min_free_gb:
+                logging.warning(f"Insufficient disk space for short {i+1} build: {free_gb:.2f}GB free")
+                logging.warning(f"Skipping short {i+1} - please free up space")
+                continue  # Skip this short, continue with others
+            
             # Build video with UNIQUE filename (script hash + index + timestamp)
             # Format: short_{i}_{short_hash}_{safe_topic}_{timestamp}.mp4
             # Index prevents overwrites within same run, timestamp prevents across runs
@@ -747,7 +776,8 @@ def run_unified_pipeline():
                 from moviepy.editor import VideoFileClip
                 with VideoFileClip(long_video_path) as clip:
                     long_duration = clip.duration
-            except:
+            except Exception as e:
+                logging.debug(f"Video duration check failed (non-critical): {e}")
                 pass
             
             # Create script_data dict for quality scorer

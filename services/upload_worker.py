@@ -129,18 +129,31 @@ def check_and_upload_pending() -> Dict[str, int]:
         logging.info(f"   Scheduled: {scheduled_time}")
         
         try:
-            # Extract metadata
-            seo_metadata = metadata.get("seo_metadata", {})
-            thumbnail_path = metadata.get("thumbnail_path")
-            video_type = item.get("type", "short")
+            # Use upload lock to prevent concurrent uploads
+            from utils.upload_lock import upload_lock
             
-            # Upload to YouTube
-            video_id = upload_short(
-                file_path,
-                seo_metadata,
-                publish_at=scheduled_time,
-                thumbnail_path=thumbnail_path
-            )
+            with upload_lock(file_path, timeout=300):
+                # Extract metadata
+                seo_metadata = metadata.get("seo_metadata", {})
+                thumbnail_path = metadata.get("thumbnail_path")
+                video_type = item.get("type", "short")
+                
+                # Double-check not already uploaded (race condition protection)
+                already_uploaded_check, existing_id_check = is_already_uploaded(file_path)
+                if already_uploaded_check:
+                    logging.info(f"Video already uploaded (double-check): {existing_id_check}, skipping")
+                    mark_as_uploaded(file_path, existing_id_check)
+                    mark_upload_success(file_path, existing_id_check)
+                    results["uploaded"] += 1
+                    continue
+                
+                # Upload to YouTube
+                video_id = upload_short(
+                    file_path,
+                    seo_metadata,
+                    publish_at=scheduled_time,
+                    thumbnail_path=thumbnail_path
+                )
             
             if video_id:
                 # Mark as uploaded
@@ -186,11 +199,32 @@ def check_and_upload_pending() -> Dict[str, int]:
                         except Exception as e:
                             logging.warning(f"Cross-promotion comment failed: {e}")
                 
+                # Validate video_id is unique (collision detection)
+                if video_id:
+                    # Check if this video_id already exists in uploaded list
+                    status_check = load_upload_status()
+                    existing_videos = [v for v in status_check.get("uploaded", []) if v.get("video_id") == video_id]
+                    if existing_videos:
+                        logging.warning(f"[Upload Worker] Video ID collision detected: {video_id}")
+                        logging.warning(f"[Upload Worker] Updating existing record instead of creating duplicate")
+                        # Update existing record instead of creating duplicate
+                        for existing_video in existing_videos:
+                            if existing_video.get("file_path") != file_path:
+                                existing_video["file_path"] = file_path
+                                existing_video["uploaded_at"] = datetime.datetime.now().isoformat()
+                                save_upload_status(status_check)
+                                break
+                
                 results["uploaded"] += 1
                 logging.info(f"✅ Successfully uploaded: {os.path.basename(file_path)} → {video_id}")
             else:
                 raise Exception("Upload returned None video_id")
                 
+        except TimeoutError as e:
+            # Lock timeout - skip this upload, try again next minute
+            logging.warning(f"[Upload Worker] Lock timeout for {os.path.basename(file_path)}: {e}")
+            results["failed"] += 1
+            continue
         except Exception as e:
             # Increment attempts
             item["attempts"] = attempts + 1

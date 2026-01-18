@@ -130,6 +130,15 @@ def get_long_video_publish_time():
         
         # Convert to UTC
         utc_time = publish_time.astimezone(pytz.UTC)
+        
+        # VALIDATION: Ensure scheduled time is in the future
+        now_utc = datetime.datetime.now(pytz.UTC)
+        if utc_time <= now_utc:
+            logging.warning(f"[Long Scheduler] Calculated time is in the past, adjusting to future")
+            # Add 1 day to ensure future time
+            utc_time = now_utc + datetime.timedelta(days=1, hours=hour, minutes=minute)
+            publish_time = utc_time.astimezone(target_tz)
+        
         iso_time = utc_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         
         print(f"[Long Scheduler] Day: {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday]}")
@@ -189,6 +198,15 @@ def get_shorts_publish_time(short_index, base_publish_time):
         
         # Convert to UTC
         utc_time = publish_time.astimezone(pytz.UTC)
+        
+        # VALIDATION: Ensure scheduled time is in the future
+        now_utc = datetime.datetime.now(pytz.UTC)
+        if utc_time <= now_utc:
+            logging.warning(f"[Shorts Scheduler] Calculated time is in the past, adjusting to future")
+            # Add days to ensure future time
+            utc_time = now_utc + datetime.timedelta(days=short_index + 2, hours=hour, minutes=minute)
+            publish_time = utc_time.astimezone(target_tz)
+        
         iso_time = utc_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         
         print(f"[Shorts Scheduler] Short {short_index+1}: {publish_time.strftime('%a %H:%M')} (scroll slot)")

@@ -42,10 +42,32 @@ class ChannelConfig:
         
         for path in config_paths:
             if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f:
-                    self._config = yaml.safe_load(f)
-                print(f"[Config] Loaded: {path}")
-                return
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        self._config = yaml.safe_load(f)
+                    print(f"[Config] Loaded: {path}")
+                    
+                    # Validate configuration
+                    try:
+                        from config.validator import ConfigValidator
+                        ConfigValidator.validate_and_raise()
+                    except ImportError:
+                        # Validator not available, skip validation
+                        pass
+                    except ValueError as e:
+                        # Validation failed - log but continue with defaults
+                        import logging
+                        logging.error(f"[Config] Validation failed: {e}")
+                        logging.warning("[Config] Using default configuration due to validation errors")
+                        self._config = self._get_defaults()
+                    
+                    return
+                except yaml.YAMLError as e:
+                    import logging
+                    logging.error(f"[Config] Failed to parse YAML file {path}: {e}")
+                    print(f"[Config] ERROR: Invalid YAML in {path}, using defaults")
+                    self._config = self._get_defaults()
+                    return
         
         # Fallback to default config
         print("[Config] WARNING: channel_config.yaml not found, using defaults")

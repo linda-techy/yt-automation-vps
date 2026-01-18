@@ -3,24 +3,20 @@ import os
 import datetime
 import logging
 
+from utils.file_locking import load_json_safe, save_json_safe
+
 UPLOAD_STATUS_FILE = "channel/upload_status.json"
 
 def load_upload_status():
-    """Load upload status from JSON file"""
-    if not os.path.exists(UPLOAD_STATUS_FILE):
-        return {"pending_uploads": [], "uploaded": []}
-    
-    try:
-        with open(UPLOAD_STATUS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        return {"pending_uploads": [], "uploaded": []}
+    """Load upload status from JSON file (thread-safe)"""
+    default_status = {"pending_uploads": [], "uploaded": []}
+    return load_json_safe(UPLOAD_STATUS_FILE, default=default_status)
 
 def save_upload_status(status):
-    """Save upload status to JSON file"""
-    os.makedirs(os.path.dirname(UPLOAD_STATUS_FILE), exist_ok=True)
-    with open(UPLOAD_STATUS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(status, f, indent=2, ensure_ascii=False)
+    """Save upload status to JSON file (thread-safe)"""
+    success = save_json_safe(UPLOAD_STATUS_FILE, status)
+    if not success:
+        logging.error(f"[Upload Tracker] Failed to save upload status: {UPLOAD_STATUS_FILE}")
 
 def track_pending_upload(file_path, video_type, topic, scheduled_time, metadata=None):
     """Track a file as pending upload"""

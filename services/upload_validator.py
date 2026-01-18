@@ -198,73 +198,139 @@ def check_quota_available(required_units=1600, quota_file='channel/youtube_quota
     """
     Check if enough YouTube API quota available.
     
-    YouTube Limits:
-    - 10,000 units/day
-    - Upload = 1,600 units
+    DEPRECATED: This function uses JSON-based quota tracking.
+    Use services.quota_manager.get_quota_manager().check_available() instead.
+    
+    This function is kept for backward compatibility but delegates to quota_manager.
     
     Args:
         required_units: Units needed for operation
-        quota_file: Path to quota tracking JSON
+        quota_file: DEPRECATED - not used, kept for compatibility
     
     Returns:
         dict: {"available": bool, "used": int, "limit": int, "reset_at": str}
     """
-    
-    DAILY_LIMIT = 10000
-    
-    # Load or initialize quota data
-    if os.path.exists(quota_file):
-        with open(quota_file, 'r') as f:
-            quota_data = json.load(f)
+    # Use persistent quota manager instead of JSON
+    try:
+        from services.quota_manager import get_quota_manager, QuotaExceededError
+        quota_manager = get_quota_manager()
         
-        # Reset if new day
-        reset_date = datetime.fromisoformat(quota_data['reset_date']).date()
-        if reset_date < datetime.now().date():
+        # Determine operation type from required_units
+        if required_units >= 1600:
+            operation = 'upload'
+        elif required_units >= 50:
+            operation = 'comment'
+        else:
+            operation = 'list'
+        
+        try:
+            quota_manager.check_available(operation)
+            status = quota_manager.get_current_usage()
+            return {
+                "available": True,
+                "used": status['used'],
+                "limit": status['limit'],
+                "remaining": status['remaining'],
+                "reset_at": status['reset_at']
+            }
+        except QuotaExceededError:
+            status = quota_manager.get_current_usage()
+            return {
+                "available": False,
+                "used": status['used'],
+                "limit": status['limit'],
+                "remaining": status['remaining'],
+                "reset_at": status['reset_at']
+            }
+    except ImportError:
+        # Fallback to old JSON-based tracking if quota_manager not available
+        logging.warning("[Upload Validator] quota_manager not available, using deprecated JSON tracking")
+        DAILY_LIMIT = 10000
+        
+        # Load or initialize quota data
+        if os.path.exists(quota_file):
+            try:
+                with open(quota_file, 'r') as f:
+                    quota_data = json.load(f)
+                
+                # Reset if new day
+                reset_date = datetime.fromisoformat(quota_data['reset_date']).date()
+                if reset_date < datetime.now().date():
+                    quota_data = {
+                        "used": 0,
+                        "reset_date": datetime.now().date().isoformat()
+                    }
+            except Exception as e:
+                logging.error(f"[Upload Validator] Failed to load quota file: {e}")
+                quota_data = {
+                    "used": 0,
+                    "reset_date": datetime.now().date().isoformat()
+                }
+        else:
             quota_data = {
                 "used": 0,
                 "reset_date": datetime.now().date().isoformat()
             }
-    else:
-        quota_data = {
-            "used": 0,
-            "reset_date": datetime.now().date().isoformat()
+        
+        # Check availability
+        available = (quota_data['used'] + required_units) <= DAILY_LIMIT
+        
+        return {
+            "available": available,
+            "used": quota_data['used'],
+            "limit": DAILY_LIMIT,
+            "remaining": DAILY_LIMIT - quota_data['used'],
+            "reset_at": quota_data['reset_date']
         }
-    
-    # Check availability
-    available = (quota_data['used'] + required_units) <= DAILY_LIMIT
-    
-    return {
-        "available": available,
-        "used": quota_data['used'],
-        "limit": DAILY_LIMIT,
-        "remaining": DAILY_LIMIT - quota_data['used'],
-        "reset_at": quota_data['reset_date']
-    }
 
 
 def record_quota_usage(units_used=1600, quota_file='channel/youtube_quota.json'):
     """
     Record YouTube API quota usage.
     
+    DEPRECATED: This function uses JSON-based quota tracking.
+    Use services.quota_manager.get_quota_manager().record_usage() instead.
+    
+    This function is kept for backward compatibility but delegates to quota_manager.
+    
     Args:
         units_used: Units consumed (upload=1600, comment=50, etc.)
-        quota_file: Path to quota tracking JSON
+        quota_file: DEPRECATED - not used, kept for compatibility
     """
-    
-    quota_status = check_quota_available(0)  # Get current status
-    
-    quota_data = {
-        "used": quota_status['used'] + units_used,
-        "reset_date": quota_status['reset_at']
-    }
-    
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(quota_file), exist_ok=True)
-    
-    with open(quota_file, 'w') as f:
-        json.dump(quota_data, f, indent=2)
-    
-    logging.info(f"Quota: {quota_data['used']}/10000 used")
+    # Use persistent quota manager instead of JSON
+    try:
+        from services.quota_manager import get_quota_manager
+        quota_manager = get_quota_manager()
+        
+        # Determine operation type from units_used
+        if units_used >= 1600:
+            operation = 'upload'
+        elif units_used >= 50:
+            operation = 'comment'
+        else:
+            operation = 'list'
+        
+        quota_manager.record_usage(operation, units_used)
+        logging.info(f"[Upload Validator] Recorded quota usage via quota_manager: {operation} = {units_used} units")
+    except ImportError:
+        # Fallback to old JSON-based tracking
+        logging.warning("[Upload Validator] quota_manager not available, using deprecated JSON tracking")
+        quota_status = check_quota_available(0)  # Get current status
+        
+        quota_data = {
+            "used": quota_status['used'] + units_used,
+            "reset_date": quota_status['reset_at']
+        }
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(quota_file), exist_ok=True)
+        
+        try:
+            with open(quota_file, 'w') as f:
+                json.dump(quota_data, f, indent=2)
+            logging.info(f"Quota: {quota_data['used']}/10000 used")
+        except Exception as e:
+            logging.error(f"[Upload Validator] Failed to save quota usage: {e}")
 
 
 if __name__ == "__main__":
