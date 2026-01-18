@@ -14,11 +14,13 @@ Checks for:
 
 import logging
 import json
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
-# Use a fast, cheap model for safety checks
-llm_safety = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+# Use wrapped LLM adapter with error handling
+from adapters.openai.llm_wrapper import get_llm_fast
+from utils.logging.tracer import tracer
+
+llm_safety = get_llm_fast()
 
 POLICY_SYSTEM_PROMPT = """You are the 'Policy Guard' AI for a YouTube automation channel.
 Your job is to strictly enforce YouTube's Community Guidelines and Ad-Friendly Guidelines.
@@ -61,10 +63,14 @@ def check_script_safety(script_text: str, topic: str) -> dict:
     """
 
     try:
-        response = llm_safety.invoke([
-            SystemMessage(content=POLICY_SYSTEM_PROMPT),
-            HumanMessage(content=prompt)
-        ])
+        response = llm_safety.invoke(
+            [
+                SystemMessage(content=POLICY_SYSTEM_PROMPT),
+                HumanMessage(content=prompt)
+            ],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
+        )
         
         content = response.content.strip()
         if "```json" in content:

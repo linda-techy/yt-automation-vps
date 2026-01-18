@@ -22,9 +22,13 @@ EXAMPLE:
 import os
 import json
 import logging
-from openai import OpenAI
 
-client = OpenAI()
+# Use wrapped LLM adapter with error handling
+from adapters.openai.llm_wrapper import get_llm_fast
+from utils.logging.tracer import tracer
+from langchain_core.messages import HumanMessage
+
+llm = get_llm_fast()
 
 # Visual category mappings for common script themes
 VISUAL_CATEGORIES = {
@@ -104,13 +108,12 @@ Focus on:
 Return ONLY a brief 2-3 sentence English summary of the visual concepts:"""
 
         try:
-            concept_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": concept_prompt}],
-                temperature=0.5,
-                max_tokens=150
+            concept_response = llm.invoke(
+                [HumanMessage(content=concept_prompt)],
+                trace_id=tracer.get_trace_id(),
+                compress_context=True
             )
-            concept_summary = concept_response.choices[0].message.content.strip()
+            concept_summary = concept_response.content.strip()
             logging.info(f"[SemanticMatcher] Malayalam→Concept: {concept_summary[:100]}")
         except Exception as e:
             logging.warning(f"[SemanticMatcher] Concept extraction failed: {e}")
@@ -148,14 +151,13 @@ Return ONLY a JSON array of 4 search terms:
 ["term1", "term2", "term3", "term4"]"""
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=100
+        response = llm.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.content.strip()
         
         # Parse JSON array
         if "```" in content:

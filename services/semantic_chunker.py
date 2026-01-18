@@ -4,11 +4,11 @@ Chunks audio by MEANING, not time - critical for search relevance
 """
 
 import logging
-from openai import OpenAI
 import json
 import os
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Note: Still using OpenAI client directly for embeddings API
+# (different from chat completions - handled separately)
 
 
 def chunk_by_semantics(transcript_segments, min_duration=15, max_duration=40, topic_hint=None):
@@ -103,15 +103,21 @@ Return ONLY a JSON array of boundary timestamps (in seconds):
 If no clear boundaries, return empty array: []
 """
 
+    # Use wrapped LLM adapter
+    from adapters.openai.llm_wrapper import get_llm_fast
+    from utils.logging.tracer import tracer
+    from langchain_core.messages import HumanMessage
+    
+    llm_chunk = get_llm_fast()
+    
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=200
+        response = llm_chunk.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.content.strip()
         
         # Parse JSON
         if "```" in content:
@@ -199,15 +205,21 @@ Return ONLY JSON:
 {{"topic": "...", "intent": "..."}}
 """
 
+    # Use wrapped LLM adapter
+    from adapters.openai.llm_wrapper import get_llm_fast
+    from utils.logging.tracer import tracer
+    from langchain_core.messages import HumanMessage
+    
+    llm_analyze = get_llm_fast()
+    
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=50
+        response = llm_analyze.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.content.strip()
         
         if "```" in content:
             content = content.split("```")[1].replace("json", "").strip()

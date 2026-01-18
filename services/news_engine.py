@@ -15,7 +15,6 @@ import json
 import logging
 from datetime import datetime
 from ddgs import DDGS
-from openai import OpenAI
 
 # Import channel configuration
 try:
@@ -23,10 +22,14 @@ try:
     CONFIG_LOADED = True
 except ImportError:
     CONFIG_LOADED = False
-    print("[NewsEngine] WARNING: channel_config not found")
+    logging.warning("[NewsEngine] WARNING: channel_config not found")
 
-# OpenAI client
-client = OpenAI()
+# Use wrapped LLM adapter with error handling
+from adapters.openai.llm_wrapper import get_llm_fast
+from utils.logging.tracer import tracer
+from langchain_core.messages import HumanMessage
+
+llm = get_llm_fast()
 
 
 def generate_search_terms(niche: str) -> list:
@@ -55,23 +58,22 @@ Return ONLY a JSON array of 6 search strings:
 ["term 1", "term 2", "term 3", "term 4", "term 5", "term 6"]"""
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=200
+        response = llm.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.content.strip()
         if "```" in content:
             content = content.split("```")[1].replace("json", "").strip()
         
         terms = json.loads(content)
-        print(f"[AI Topics] Generated {len(terms)} search terms for '{niche}'")
+        logging.info(f"[AI Topics] Generated {len(terms)} search terms for '{niche}'")
         return terms
         
     except Exception as e:
-        print(f"[AI Topics] Search term generation failed: {e}")
+        logging.error(f"[AI Topics] Search term generation failed: {e}")
         # Fallback - use niche directly
         current_year = datetime.now().year
         return [
@@ -122,14 +124,13 @@ Return JSON:
 }}"""
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.5,
-            max_tokens=300
+        response = llm.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.content.strip()
         if "```" in content:
             content = content.split("```")[1].replace("json", "").strip()
         
@@ -146,7 +147,7 @@ Return JSON:
         return topics[0]
         
     except Exception as e:
-        print(f"[AI Topics] Viral evaluation failed: {e}")
+        logging.error(f"[AI Topics] Viral evaluation failed: {e}")
         return topics[0] if topics else None
 
 
@@ -167,7 +168,7 @@ def get_latest_news(niche: str = None, max_results: int = 3) -> list:
     elif not niche:
         niche = "Technology"
     
-    print(f"[AI Topics] Discovering topics for niche: '{niche}'")
+    logging.info(f"[AI Topics] Discovering topics for niche: '{niche}'")
     
     # Step 1: AI generates search terms based on niche
     search_terms = generate_search_terms(niche)
@@ -190,10 +191,10 @@ def get_latest_news(niche: str = None, max_results: int = 3) -> list:
                 all_results.append(r)
                 
         except Exception as e:
-            print(f"[AI Topics] News fetch error for '{term}': {e}")
+            logging.warning(f"[AI Topics] News fetch error for '{term}': {e}")
             continue
     
-    print(f"[AI Topics] Fetched {len(all_results)} news items")
+    logging.info(f"[AI Topics] Fetched {len(all_results)} news items")
     return all_results
 
 
@@ -227,8 +228,8 @@ def get_best_viral_topic(niche: str = None) -> dict:
     if not best:
         raise Exception("AI topic evaluation failed")
     
-    print(f"[AI Topics] BEST TOPIC: {best.get('title', 'Unknown')[:60]}...")
-    print(f"[AI Topics] Viral Score: {best.get('viral_score', 0)}/10")
+    logging.info(f"[AI Topics] BEST TOPIC: {best.get('title', 'Unknown')[:60]}...")
+    logging.info(f"[AI Topics] Viral Score: {best.get('viral_score', 0)}/10")
     
     return best
 

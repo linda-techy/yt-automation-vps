@@ -164,16 +164,15 @@ def get_alternative_query(original_query: str, niche: str = "Technology") -> str
     Generate an alternative search query if original was recently used.
     Uses AI to create a semantically similar but different query.
     """
-    try:
-        from openai import OpenAI
-        client = OpenAI()
-        
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{
-                "role": "user",
-                "content": f"""Generate 1 alternative search query for stock video/images.
-                
+    # Use wrapped LLM adapter
+    from adapters.openai.llm_wrapper import get_llm_fast
+    from utils.logging.tracer import tracer
+    from langchain_core.messages import HumanMessage
+    
+    llm_alt = get_llm_fast()
+    
+    prompt = f"""Generate 1 alternative search query for stock video/images.
+
 Original: "{original_query}"
 Niche: {niche}
 
@@ -183,12 +182,15 @@ Requirements:
 - Still relevant to the topic
 
 Return ONLY the alternative query, nothing else."""
-            }],
-            temperature=0.9,
-            max_tokens=50
+    
+    try:
+        response = llm_alt.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
         )
         
-        alternative = response.choices[0].message.content.strip()
+        alternative = response.content.strip()
         logging.info(f"[VisualTracker] Alternative: '{original_query[:30]}' → '{alternative[:30]}'")
         return alternative
         

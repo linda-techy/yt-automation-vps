@@ -4,11 +4,15 @@ Analyzes Malayalam audio chunks to determine visual strategy
 """
 
 import logging
-from openai import OpenAI
 import os
 import json
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Use wrapped LLM adapter with error handling
+from adapters.openai.llm_wrapper import get_llm_fast
+from utils.logging.tracer import tracer
+from langchain_core.messages import HumanMessage
+
+llm = get_llm_fast()
 
 
 # Intent types and their meanings
@@ -159,14 +163,13 @@ Return ONLY JSON:
 """
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,  # Low temperature for consistency
-            max_tokens=100
+        response = llm.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.content.strip()
         
         if "```" in content:
             content = content.split("```")[1].replace("json", "").strip()

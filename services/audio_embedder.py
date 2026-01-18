@@ -106,15 +106,21 @@ Concept: "ആളുകൾ പ്ലാനിംഗില്ലാതെ തു�
 
 Return ONLY the Malayalam concept phrase:"""
 
+    # Use wrapped LLM adapter for concept extraction
+    from adapters.openai.llm_wrapper import get_llm_fast
+    from utils.logging.tracer import tracer
+    from langchain_core.messages import HumanMessage
+    
+    llm_concept = get_llm_fast()
+    
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=100
+        response = llm_concept.invoke(
+            [HumanMessage(content=prompt)],
+            trace_id=tracer.get_trace_id(),
+            compress_context=True
         )
         
-        concept = response.choices[0].message.content.strip()
+        concept = response.content.strip()
         
         # Remove quotes if present
         concept = concept.strip('"').strip("'")

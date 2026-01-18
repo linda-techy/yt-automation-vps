@@ -16,7 +16,6 @@ import os
 import json
 from typing import TypedDict, List, Optional
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # Import channel configuration
@@ -106,6 +105,9 @@ llm_analyst = get_llm_analyst()
 llm_storyteller = get_llm_storyteller()
 llm_editor = get_llm_editor()
 
+# Import prompt registry and compressor for token optimization
+from utils.prompts.registry import registry
+from utils.prompts.compressor import compressor
 
 # ============================================================================
 # DYNAMIC PROMPT GENERATORS
@@ -131,36 +133,19 @@ def get_structure_prompt(perception: dict, research: dict, ctx: dict) -> str:
 
 def get_section_prompt(section_info: dict, research: dict, perception: dict, 
                        target_words: int, ctx: dict) -> str:
-    language_rules = get_script_language_rules(ctx['language'])
+    """Get section prompt using registry with compressed context"""
+    # Compress context before sending (reduce tokens by 60-80%)
+    section_info_summary = compressor.compress_dict(section_info, max_length=100)
+    research_summary = compressor.compress_dict(research, max_length=200)
+    perception_summary = compressor.compress_dict(perception, max_length=150)
     
-    return f"""You are the SCRIPTWRITER for {ctx['channel_name']}.
-Write ONE section of a {ctx['language_name']} documentary script.
-
-CHANNEL: {ctx['channel_name']}
-NICHE: {ctx['niche']}
-PERSONA: {ctx['persona']}
-
-SECTION INFO: {json.dumps(section_info)}
-RESEARCH: {json.dumps(research)}
-PERCEPTION: {json.dumps(perception)}
-
-{language_rules}
-
-TARGET: {target_words} words for this section.
-
-VISUAL CUES RULES:
-- Provide 8-10 SPECIFIC visual search terms
-- Real, searchable terms (not abstract)
-- Matched to what you're narrating
-
-Return JSON:
-{{
-    "header": "{section_info.get('name', 'Section')}",
-    "content": "Full {ctx['language_name']} script for this section",
-    "visual_cues": ["specific term 1", "term 2", ...8-10 items],
-    "on_screen_text": ["Key phrase to display"],
-    "word_count": {target_words}
-}}"""
+    # Use registry method which already uses compact templates
+    return registry.get_long_section_prompt(
+        section_info_summary,
+        research_summary,
+        perception_summary,
+        target_words
+    )
 
 
 def get_assemble_prompt(sections: list, perception: dict, ctx: dict) -> str:
@@ -174,28 +159,6 @@ def get_critique_prompt(script: dict, ctx: dict) -> str:
     """Get critique prompt with compressed context"""
     script_summary = compressor.compress_dict(script, max_length=200)
     return registry.get_long_critique_prompt(script_summary)
-    return f"""You are the QUALITY CONTROL module for {ctx['channel_name']}.
-Evaluate this {ctx['niche']} documentary for a {ctx['language_name']} audience.
-
-SCRIPT: {json.dumps(script, ensure_ascii=False)}
-
-Score each dimension (1-10):
-
-Return JSON:
-{{
-    "scores": {{
-        "hook_power": 8,
-        "narrative_flow": 7,
-        "information_value": 9,
-        "emotional_arc": 8,
-        "visual_variety": 7,
-        "retention_likelihood": 8,
-        "monetization_safe": 10
-    }},
-    "overall_score": 8.1,
-    "weakest_section": "Which section needs work",
-    "verdict": "APPROVED" or "NEEDS_REVISION"
-}}"""
 
 
 # ============================================================================

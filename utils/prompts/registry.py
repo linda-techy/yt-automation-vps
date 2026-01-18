@@ -168,6 +168,34 @@ class PromptRegistry:
     def get_long_critique_prompt(cls, draft_summary: str) -> str:
         """Long-form critique prompt"""
         return f"DOC_CRITIQUE|DRAFT:{draft_summary}\nJSON:{{overall_score,weakest_section,verdict,revision_priority}}"
+    
+    # News engine prompts
+    @classmethod
+    def get_news_search_terms_prompt(cls, niche: str, current_year: int, next_year: int) -> str:
+        """Compact news search terms generation prompt"""
+        return f"NEWS_SEARCH_MODULE|NICHE:{niche}|YEAR:{current_year}/{next_year}\nREQUIREMENTS:CURRENT|BREAKING|TRENDING\nJSON:[str×6]"
+    
+    @classmethod
+    def get_news_viral_eval_prompt(cls, topics_text: str, niche: str) -> str:
+        """Compact news viral potential evaluation prompt"""
+        return f"VIRAL_EVAL_MODULE|NICHE:{niche}|TOPICS:{topics_text}\nCRITERIA:CURIOSITY|EMOTION|RELEVANCE|SHARE|CONTROVERSY|TIMELINESS\nJSON:{{best_index,viral_score,reasoning,hook_angle,thumbnail_concept}}"
+    
+    # Policy guard prompts
+    @classmethod
+    def get_policy_system_prompt(cls) -> str:
+        """Policy guard system prompt (safety checks)"""
+        return """POLICY_GUARD|YOUTUBE_YPP_COMPLIANCE
+RISK_FLAGS:HATE|HARASSMENT|SELF_HARM|VIOLENCE|SHOCK|MISINFO|COPYRIGHT|SEXUAL
+SAFE:EDUCATIONAL|DOCUMENTARY|FICTIONAL
+STRICT:AD_SUITABILITY|NO_SWEARING|NO_CONTROVERSY"""
+    
+    @classmethod
+    def get_policy_check_prompt(cls, topic: str, script_text: str) -> str:
+        """Compact policy check prompt"""
+        # Compress script text if too long
+        from utils.prompts.compressor import compressor
+        script_summary = compressor.compress_dict({"script": script_text}, max_length=500).get("script", script_text[:500])
+        return f"POLICY_CHECK|TOPIC:{topic}|SCRIPT:{script_summary}\nJSON:{{safe:bool,rating,flags:[str],reason,score:0-10}}"
 
 
 # Global registry instance
