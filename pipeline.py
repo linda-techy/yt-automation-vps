@@ -517,11 +517,13 @@ def run_unified_pipeline():
         long_publish_time = get_long_video_publish_time()
         logging.info(f"[Scheduler] Long video scheduled for: {long_publish_time}")
         
-        # Prepare Output Path with UNIQUE filename (topic-based)
+        # Prepare Output Path with UNIQUE filename (topic-based + timestamp)
         # This prevents overwrites and enables proper lifecycle tracking
+        # Format: long_{topic_hash}_{safe_topic}_{timestamp}.mp4
         topic_hash = get_script_hash(topic)[:8]
         safe_topic = "".join([c for c in topic if c.isalnum() or c in (' ', '-', '_')]).strip()[:30]
-        long_video_path = f"videos/output/long_{topic_hash}_{safe_topic.replace(' ', '_')}.mp4"
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        long_video_path = f"videos/output/long_{topic_hash}_{safe_topic.replace(' ', '_')}_{timestamp}.mp4"
 
         # Check for existing video to Resume/Recover
         if os.path.exists(long_video_path):
@@ -676,10 +678,13 @@ def run_unified_pipeline():
             # Use pre-generated thumbnail from early stage
             s_thumb = shorts_thumbnails[i] if i < len(shorts_thumbnails) else None
             
-            # Build video with UNIQUE filename
+            # Build video with UNIQUE filename (script hash + index + timestamp)
+            # Format: short_{i}_{short_hash}_{safe_topic}_{timestamp}.mp4
+            # Index prevents overwrites within same run, timestamp prevents across runs
             short_hash = get_script_hash(s_text)[:8]
             safe_short_topic = "".join([c for c in short_script.get('title', f'Short_{i}') if c.isalnum() or c in (' ', '-', '_')]).strip()[:20]
-            s_output = f"videos/output/short_{i}_{short_hash}_{safe_short_topic.replace(' ', '_')}.mp4"
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            s_output = f"videos/output/short_{i}_{short_hash}_{safe_short_topic.replace(' ', '_')}_{timestamp}.mp4"
             final_short = build_final_video(s_mix, s_assets, short_script, output_path=s_output)
             
             # Register video in lifecycle manager
