@@ -83,14 +83,15 @@ def main():
     except Exception as e:
         logging.warning(f"Health check failed: {e}")
     
-    # Get schedule from config
+    # Get schedule from config (use channel_config for consistency)
     try:
-        from services.config_loader import config
-        run_time = config.get("schedule.upload_time", "19:00")
-        timezone = config.get("schedule.timezone", "Asia/Kolkata")
+        from config.channel import channel_config
+        run_time = channel_config.upload_time
+        timezone = channel_config.timezone
+        logging.info(f"Loaded schedule config: {run_time} ({timezone})")
     except Exception as e:
         logging.warning(f"Config load failed: {e}, using defaults")
-        run_time = "19:00"
+        run_time = "15:30"  # Default IST time from channel_config.yaml
         timezone = "Asia/Kolkata"
     
     logging.info(f"Scheduled runs: Monday, Wednesday, Friday at {run_time} ({timezone})")
@@ -110,8 +111,10 @@ def main():
     logging.info(f"⏰ Next run scheduled for: {schedule.next_run()}")
     
     # Keep alive loop
-    last_cleanup_time = datetime.datetime.now()
+    last_cleanup_time = datetime.datetime.now(datetime.timezone.utc)
     cleanup_interval_hours = 6  # Run cleanup every 6 hours
+    last_health_check_time = datetime.datetime.now(datetime.timezone.utc)
+    health_check_interval_hours = 1  # Run health check every hour
     
     while True:
         # Check for scheduled uploads first (runs every minute)
@@ -124,7 +127,7 @@ def main():
             logging.warning(f"Upload worker error: {e}")
         
         # Periodic health check (every hour)
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(datetime.timezone.utc)
         if (now - last_health_check_time).total_seconds() >= health_check_interval_hours * 3600:
             try:
                 from services.health_monitor import get_health_monitor, get_recovery_manager

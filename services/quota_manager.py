@@ -3,11 +3,16 @@ Persistent Quota Manager with SQLite Backend
 
 Survives daemon restarts and provides accurate quota tracking.
 Essential for production VPS deployments.
+
+IMPORTANT: YouTube API quota resets at midnight Pacific Time (PT), NOT IST.
+This is a YouTube API requirement and cannot be changed.
+Quota resets at 00:00:00 PT = 12:30:00 IST (next day) or 13:30:00 IST (next day during DST).
 """
 
 import sqlite3
 import logging
 import os
+import pytz
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 from pathlib import Path
@@ -80,8 +85,9 @@ class PersistentQuotaManager:
         reset_time = self.get_reset_time()
         
         with self._get_connection() as conn:
-            # Cleanup old records beyond reset time
-            conn.execute("DELETE FROM quota_usage WHERE reset_at < ?", (datetime.now(),))
+            # Cleanup old records beyond reset time (use UTC for consistency)
+            now_utc = datetime.now(pytz.UTC)
+            conn.execute("DELETE FROM quota_usage WHERE reset_at < ?", (now_utc,))
             conn.commit()
             
             # Sum current period usage
@@ -108,10 +114,12 @@ class PersistentQuotaManager:
         reset_time = self.get_reset_time()
         
         with self._get_connection() as conn:
+            # Use UTC for timestamp consistency
+            now_utc = datetime.now(pytz.UTC)
             conn.execute("""
                 INSERT INTO quota_usage (operation, cost, timestamp, reset_at, metadata)
                 VALUES (?, ?, ?, ?, ?)
-            """, (operation, cost, datetime.now(), reset_time, metadata))
+            """, (operation, cost, now_utc, reset_time, metadata))
             conn.commit()
             
         logging.info(f"[QuotaManager] Recorded {operation}: {cost} units")

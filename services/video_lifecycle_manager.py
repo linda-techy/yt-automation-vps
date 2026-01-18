@@ -52,7 +52,7 @@ def register_video(video_path: str, video_type: str, topic: str,
     """
     db = load_lifecycle_db()
     
-    video_id = f"{video_type}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    video_id = f"{video_type}_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     
     video_entry = {
         "id": video_id,
@@ -60,7 +60,7 @@ def register_video(video_path: str, video_type: str, topic: str,
         "video_type": video_type,
         "topic": topic,
         "scheduled_time": scheduled_time,
-        "created_at": datetime.datetime.now().isoformat(),
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "status": "created",  # created -> uploading -> uploaded -> deleted
         "youtube_video_id": None,
         "upload_attempts": 0,
@@ -83,7 +83,7 @@ def mark_upload_started(video_id: str):
         if video["id"] == video_id:
             video["status"] = "uploading"
             video["upload_attempts"] = video.get("upload_attempts", 0) + 1
-            video["last_attempt"] = datetime.datetime.now().isoformat()
+            video["last_attempt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             save_lifecycle_db(db)
             logging.info(f"[Lifecycle] Upload started: {video_id}")
             return
@@ -104,7 +104,7 @@ def mark_upload_success(file_path: str, youtube_video_id: str):
         if video["file_path"] == os.path.abspath(file_path):
             video["status"] = "uploaded"
             video["youtube_video_id"] = youtube_video_id
-            video["uploaded_at"] = datetime.datetime.now().isoformat()
+            video["uploaded_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             save_lifecycle_db(db)
             logging.info(f"[Lifecycle] ✅ Upload confirmed: {os.path.basename(file_path)} → {youtube_video_id}")
             return
@@ -217,7 +217,7 @@ def cleanup_uploaded_videos(max_age_hours: int = 48) -> int:
             try:
                 os.remove(file_path)
                 video["status"] = "deleted"
-                video["deleted_at"] = datetime.datetime.now().isoformat()
+                video["deleted_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 deleted_count += 1
                 logging.info(f"[Lifecycle] 🗑️ Deleted video: {os.path.basename(file_path)}")
                 
@@ -234,7 +234,7 @@ def cleanup_uploaded_videos(max_age_hours: int = 48) -> int:
                 logging.error(f"[Lifecycle] Failed to delete {file_path}: {e}")
     
     save_lifecycle_db(db)
-    db["last_cleanup"] = datetime.datetime.now().isoformat()
+    db["last_cleanup"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     save_lifecycle_db(db)
     
     return deleted_count

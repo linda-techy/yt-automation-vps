@@ -211,7 +211,7 @@ def check_and_upload_pending() -> Dict[str, int]:
                         for existing_video in existing_videos:
                             if existing_video.get("file_path") != file_path:
                                 existing_video["file_path"] = file_path
-                                existing_video["uploaded_at"] = datetime.datetime.now().isoformat()
+                                existing_video["uploaded_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
                                 save_upload_status(status_check)
                                 break
                 
@@ -229,7 +229,7 @@ def check_and_upload_pending() -> Dict[str, int]:
             # Increment attempts
             item["attempts"] = attempts + 1
             item["last_error"] = str(e)
-            item["last_attempt"] = datetime.datetime.now().isoformat()
+            item["last_attempt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             
             # Save updated status
             from services.upload_tracker import load_upload_status, save_upload_status

@@ -31,7 +31,7 @@ class PipelineCheckpoint:
         """
         checkpoint = {
             "step": step,
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "data": data
         }
         
@@ -85,8 +85,9 @@ class PipelineCheckpoint:
             if not timestamp_str:
                 return False
             
-            checkpoint_time = datetime.datetime.fromisoformat(timestamp_str)
-            age_hours = (datetime.datetime.now() - checkpoint_time).total_seconds() / 3600
+            checkpoint_time = datetime.datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            age_hours = (now_utc - checkpoint_time).total_seconds() / 3600
             
             # Only resume if checkpoint is less than 24 hours old
             if age_hours < 24:

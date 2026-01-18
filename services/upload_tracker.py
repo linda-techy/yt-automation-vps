@@ -27,7 +27,7 @@ def track_pending_upload(file_path, video_type, topic, scheduled_time, metadata=
         "type": video_type,
         "topic": topic,
         "scheduled_time": scheduled_time,
-        "created_at": datetime.datetime.now().isoformat(),
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "attempts": 0,
         "metadata": metadata or {}
     }
@@ -50,7 +50,7 @@ def mark_as_uploaded(file_path, video_id):
     uploaded_item = {
         "file_path": file_path,
         "video_id": video_id,
-        "uploaded_at": datetime.datetime.now().isoformat(),
+        "uploaded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "safe_to_delete": True
     }
     
@@ -70,7 +70,7 @@ def cleanup_uploaded_files():
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
-                    item["deleted_at"] = datetime.datetime.now().isoformat()
+                    item["deleted_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
                     item["safe_to_delete"] = False  # Mark as already deleted
                     deleted_count += 1
                     logging.info(f"[Upload Status] ✅ Deleted uploaded: {os.path.basename(file_path)}")

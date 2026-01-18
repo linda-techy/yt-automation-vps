@@ -11,6 +11,7 @@ Calculates optimal publish time based on channel_config.yaml:
 import datetime
 import random
 import pytz
+import logging
 
 # Import channel configuration
 try:
@@ -81,10 +82,19 @@ def get_smart_publish_time():
         return iso_time
 
     except Exception as e:
-        print(f"[Scheduler] Error calculating time: {e}")
-        # Fallback: Tomorrow at 12:00 UTC
-        fallback = datetime.datetime.utcnow() + datetime.timedelta(days=1)
-        return fallback.replace(hour=12, minute=0, second=0).isoformat() + "Z"
+        logging.error(f"[Scheduler] Error calculating time: {e}")
+        # Fallback: Tomorrow at IST primetime (20:00 IST = 14:30 UTC)
+        try:
+            ist_tz = pytz.timezone("Asia/Kolkata")
+            now_ist = datetime.datetime.now(ist_tz)
+            tomorrow_ist = (now_ist + datetime.timedelta(days=1)).replace(hour=20, minute=0, second=0, microsecond=0)
+            fallback_utc = tomorrow_ist.astimezone(pytz.UTC)
+            return fallback_utc.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        except Exception as fallback_error:
+            logging.error(f"[Scheduler] Fallback also failed: {fallback_error}")
+            # Last resort: UTC tomorrow at 14:30 (8 PM IST)
+            fallback = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=1)
+            return fallback.replace(hour=14, minute=30, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
 
 def get_long_video_publish_time():
@@ -136,8 +146,12 @@ def get_long_video_publish_time():
         if utc_time <= now_utc:
             logging.warning(f"[Long Scheduler] Calculated time is in the past, adjusting to future")
             # Add 1 day to ensure future time
-            utc_time = now_utc + datetime.timedelta(days=1, hours=hour, minutes=minute)
-            publish_time = utc_time.astimezone(target_tz)
+            # CRITICAL: hour/minute are IST values, must convert to IST datetime first
+            tomorrow_ist = (now_utc.astimezone(target_tz) + datetime.timedelta(days=1)).replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+            utc_time = tomorrow_ist.astimezone(pytz.UTC)
+            publish_time = tomorrow_ist
         
         iso_time = utc_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         
@@ -148,9 +162,19 @@ def get_long_video_publish_time():
         return iso_time
     
     except Exception as e:
-        print(f"[Long Scheduler] Error: {e}")
-        fallback = datetime.datetime.utcnow() + datetime.timedelta(days=1)
-        return fallback.replace(hour=14, minute=0, second=0).isoformat() + "Z"
+        logging.error(f"[Long Scheduler] Error: {e}")
+        # Fallback: Tomorrow at IST primetime (20:30 IST = 15:00 UTC)
+        try:
+            ist_tz = pytz.timezone("Asia/Kolkata")
+            now_ist = datetime.datetime.now(ist_tz)
+            tomorrow_ist = (now_ist + datetime.timedelta(days=1)).replace(hour=20, minute=30, second=0, microsecond=0)
+            fallback_utc = tomorrow_ist.astimezone(pytz.UTC)
+            return fallback_utc.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        except Exception as fallback_error:
+            logging.error(f"[Long Scheduler] Fallback also failed: {fallback_error}")
+            # Last resort: UTC tomorrow at 15:00 (8:30 PM IST)
+            fallback = datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=1)
+            return fallback.replace(hour=15, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
 
 def get_shorts_publish_time(short_index, base_publish_time):
@@ -204,8 +228,12 @@ def get_shorts_publish_time(short_index, base_publish_time):
         if utc_time <= now_utc:
             logging.warning(f"[Shorts Scheduler] Calculated time is in the past, adjusting to future")
             # Add days to ensure future time
-            utc_time = now_utc + datetime.timedelta(days=short_index + 2, hours=hour, minutes=minute)
-            publish_time = utc_time.astimezone(target_tz)
+            # CRITICAL: hour/minute are IST values, must convert to IST datetime first
+            future_ist = (now_utc.astimezone(target_tz) + datetime.timedelta(days=short_index + 2)).replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
+            utc_time = future_ist.astimezone(pytz.UTC)
+            publish_time = future_ist
         
         iso_time = utc_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         
