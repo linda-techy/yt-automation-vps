@@ -95,7 +95,9 @@ class ChannelConfig:
                 "engine": "edge-tts",
                 "voice_id": "en-US-GuyNeural",
                 "language_code": "en-US",
-                "background_music": {"enabled": True, "volume": 0.05}
+                "background_music": {"enabled": True, "volume": 0.05},
+                "voice_boost": 1.5,
+                "sample_rate": 44100
             },
             "visuals": {
                 "watermark": {"text": "@MyChannel", "opacity": 0.3}
@@ -110,6 +112,120 @@ class ChannelConfig:
             },
             "seo": {
                 "default_tags": []
+            },
+            "thumbnails": {
+                "long": {
+                    "dall_e_size": "1792x1024",
+                    "target_dimensions": [1920, 1080],
+                    "font_size": 180,
+                    "stroke_width": 8,
+                    "top_padding_percent": 8,
+                    "min_top_padding_px": 100
+                },
+                "short": {
+                    "dall_e_size": "1024x1792",
+                    "target_dimensions": [1080, 1920],
+                    "font_size": 400,
+                    "stroke_width": 12,
+                    "top_padding_percent": 5,
+                    "min_top_padding_px": 80
+                },
+                "common": {
+                    "horizontal_padding_percent": 5,
+                    "min_horizontal_padding_px": 40,
+                    "font_resize_reduction": 0.95,
+                    "max_font_resize_attempts": 10,
+                    "download_max_retries": 5,
+                    "download_timeout_seconds": 120,
+                    "image_quality": 95,
+                    "contrast_threshold": 3.0,
+                    "stroke_padding_extra": 2
+                }
+            },
+            "video_building": {
+                "long": {
+                    "chunk_size_seconds": 60,
+                    "fps": 24,
+                    "codec": "libx264",
+                    "audio_codec": "aac",
+                    "chunk_threads": 2,
+                    "final_threads": 4,
+                    "resolution": [1920, 1080]
+                },
+                "short": {
+                    "fps": 24,
+                    "codec": "libx264",
+                    "audio_codec": "aac",
+                    "threads": 4,
+                    "resolution": [1080, 1920]
+                }
+            },
+            "upload": {
+                "window_minutes": 5,
+                "buffer_hours": 1,
+                "max_attempts": 3,
+                "daemon_check_interval_seconds": 60
+            },
+            "quality_control": {
+                "thresholds": {
+                    "min_script_score": 7.0,
+                    "min_video_score": 6.5,
+                    "min_metadata_score": 7.0,
+                    "min_overall_score": 7.0
+                },
+                "weights": {
+                    "script_length": 2.0,
+                    "title_quality": 1.5,
+                    "visual_cues": 1.5,
+                    "seo_completeness": 1.0,
+                    "ypp_safety": 2.0,
+                    "originality": 2.0
+                }
+            },
+            "assets": {
+                "max_scene_duration_seconds": 4.5,
+                "safety_buffer": 1.15,
+                "default_count": 40,
+                "fallback_count": 50
+            },
+            "scheduler": {
+                "jitter_minutes": [-10, 10],
+                "buffer_hours": 2,
+                "weekday_times": {
+                    "monday": [20, 30],
+                    "tuesday": [21, 0],
+                    "wednesday": [21, 0],
+                    "thursday": [21, 0],
+                    "friday": [20, 0],
+                    "saturday": [19, 0],
+                    "sunday": [18, 30]
+                }
+            },
+            "lifecycle": {
+                "max_age_hours": 48,
+                "cleanup_interval_hours": 6
+            },
+            "health": {
+                "check_interval_hours": 1,
+                "max_retries": 3,
+                "stale_file_age_hours": 24,
+                "cleanup_stale_files_age_hours": 48
+            },
+            "quota": {
+                "daily_limit": 10000,
+                "costs": {
+                    "upload": 1600,
+                    "comment": 50,
+                    "update": 50,
+                    "list": 1
+                }
+            },
+            "validation": {
+                "fps": {
+                    "min": 23,
+                    "max": 61
+                },
+                "min_duration_seconds": 0.2
             }
         }
     
@@ -215,6 +331,56 @@ class ChannelConfig:
         # Combine niche + content types as keywords
         derived_keywords = [niche] + content_types[:3]  # Max 4 keywords
         return derived_keywords if derived_keywords else ["General Topics"]
+    
+    # Thumbnail settings convenience properties
+    @property
+    def thumbnail_settings(self) -> dict:
+        return self.get("thumbnails", {})
+    
+    # Video building settings convenience properties
+    @property
+    def video_building_settings(self) -> dict:
+        return self.get("video_building", {})
+    
+    # Upload settings convenience properties
+    @property
+    def upload_settings(self) -> dict:
+        return self.get("upload", {})
+    
+    # Quality control settings convenience properties
+    @property
+    def quality_control_settings(self) -> dict:
+        return self.get("quality_control", {})
+    
+    # Asset settings convenience properties
+    @property
+    def asset_settings(self) -> dict:
+        return self.get("assets", {})
+    
+    # Scheduler settings convenience properties
+    @property
+    def scheduler_settings(self) -> dict:
+        return self.get("scheduler", {})
+    
+    # Lifecycle settings convenience properties
+    @property
+    def lifecycle_settings(self) -> dict:
+        return self.get("lifecycle", {})
+    
+    # Health settings convenience properties
+    @property
+    def health_settings(self) -> dict:
+        return self.get("health", {})
+    
+    # Quota settings convenience properties
+    @property
+    def quota_settings(self) -> dict:
+        return self.get("quota", {})
+    
+    # Validation settings convenience properties
+    @property
+    def validation_settings(self) -> dict:
+        return self.get("validation", {})
 
 
 

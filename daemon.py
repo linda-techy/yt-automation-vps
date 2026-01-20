@@ -144,10 +144,16 @@ def main():
         logging.info(f"⏰ Scheduled (fallback) for Monday, Wednesday, Friday at {run_time}")
     
     # Keep alive loop
+    from config.channel import channel_config
+    lifecycle_config = channel_config.get("lifecycle", {})
+    health_config = channel_config.get("health", {})
+    upload_config = channel_config.get("upload", {})
+    
     last_cleanup_time = datetime.datetime.now(datetime.timezone.utc)
-    cleanup_interval_hours = 6  # Run cleanup every 6 hours
+    cleanup_interval_hours = lifecycle_config.get("cleanup_interval_hours", 6)  # Run cleanup every 6 hours
     last_health_check_time = datetime.datetime.now(datetime.timezone.utc)
-    health_check_interval_hours = 1  # Run health check every hour
+    health_check_interval_hours = health_config.get("check_interval_hours", 1)  # Run health check every hour
+    daemon_check_interval = upload_config.get("daemon_check_interval_seconds", 60)
     
     # Log daemon start
     logging.info("="*60)
@@ -187,7 +193,8 @@ def main():
                     
                     # Attempt recovery
                     recovery = get_recovery_manager()
-                    recovery.cleanup_stale_files(max_age_hours=24)
+                    stale_file_age = health_config.get("stale_file_age_hours", 24)
+                    recovery.cleanup_stale_files(max_age_hours=stale_file_age)
                 
                 last_health_check_time = now
             except Exception as e:
@@ -197,7 +204,8 @@ def main():
         if (now - last_cleanup_time).total_seconds() >= cleanup_interval_hours * 3600:
             try:
                 from services.video_lifecycle_manager import cleanup_uploaded_videos, cleanup_temp_files
-                deleted_count = cleanup_uploaded_videos(max_age_hours=48)
+                max_age_hours = lifecycle_config.get("max_age_hours", 48)
+                deleted_count = cleanup_uploaded_videos(max_age_hours=max_age_hours)
                 if deleted_count > 0:
                     logging.info(f"🗑️ Periodic cleanup: Deleted {deleted_count} old videos")
                 cleanup_temp_files()
@@ -207,7 +215,7 @@ def main():
         
         # Then check for pipeline jobs
         schedule.run_pending()
-        time.sleep(60)  # Check every minute
+        time.sleep(daemon_check_interval)  # Check interval from config
 
 if __name__ == "__main__":
     main()

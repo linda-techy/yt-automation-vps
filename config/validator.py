@@ -120,6 +120,39 @@ class ConfigValidator:
                         warnings.append(f"Shorts duration unusual: {duration} seconds (typical: 30-60 seconds)")
                 except (ValueError, TypeError):
                     errors.append(f"Invalid shorts duration: {shorts_duration}")
+            
+            # Validate thumbnail settings
+            thumbnails = channel_config.get("thumbnails", {})
+            if thumbnails:
+                long_font = thumbnails.get("long", {}).get("font_size")
+                if long_font and (long_font < 50 or long_font > 300):
+                    warnings.append(f"Long thumbnail font size unusual: {long_font}px")
+                
+                short_font = thumbnails.get("short", {}).get("font_size")
+                if short_font and (short_font < 100 or short_font > 600):
+                    warnings.append(f"Short thumbnail font size unusual: {short_font}px")
+            
+            # Validate video building settings
+            video_building = channel_config.get("video_building", {})
+            if video_building:
+                long_fps = video_building.get("long", {}).get("fps")
+                if long_fps and (long_fps < 15 or long_fps > 60):
+                    warnings.append(f"Long video FPS unusual: {long_fps} (typical: 24-30)")
+            
+            # Validate quality control thresholds
+            qc = channel_config.get("quality_control", {})
+            if qc:
+                thresholds = qc.get("thresholds", {})
+                for key, value in thresholds.items():
+                    if isinstance(value, (int, float)) and (value < 0 or value > 10):
+                        warnings.append(f"Quality control threshold {key} out of range: {value} (expected 0-10)")
+            
+            # Validate quota settings
+            quota = channel_config.get("quota", {})
+            if quota:
+                daily_limit = quota.get("daily_limit")
+                if daily_limit and daily_limit != 10000:
+                    warnings.append(f"Daily quota limit changed from default: {daily_limit} (default: 10000)")
         
         except Exception as e:
             errors.append(f"Validation error: {e}")

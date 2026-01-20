@@ -20,22 +20,28 @@ from services.upload_tracker import (
 from services.youtube_uploader import upload_short
 from services.video_lifecycle_manager import mark_upload_success
 from services.content_archiver import archive_content
+from config.channel import channel_config
 
 
-def should_upload_now(scheduled_time_str: str, window_minutes: int = 5) -> bool:
+def should_upload_now(scheduled_time_str: str, window_minutes: int = None) -> bool:
     """
     Check if current time is within upload window of scheduled time.
     
     Args:
         scheduled_time_str: ISO format scheduled publish time (UTC)
-        window_minutes: Time window in minutes before scheduled time (default: 5)
+        window_minutes: Time window in minutes before scheduled time (default from config)
     
     Returns:
         bool: True if current time is within upload window
     """
     try:
-        # Get upload time (1 hour before scheduled publish)
-        upload_time = get_upload_time_from_scheduled(scheduled_time_str, buffer_hours=1)
+        upload_config = channel_config.get("upload", {})
+        if window_minutes is None:
+            window_minutes = upload_config.get("window_minutes", 5)
+        buffer_hours = upload_config.get("buffer_hours", 1)
+        
+        # Get upload time (buffer_hours before scheduled publish)
+        upload_time = get_upload_time_from_scheduled(scheduled_time_str, buffer_hours=buffer_hours)
         
         # Get current time in UTC
         now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -83,12 +89,14 @@ def check_and_upload_pending() -> Dict[str, int]:
     # Update linked_long_video IDs for shorts (if long video was uploaded)
     _update_linked_videos()
     
+    upload_config = channel_config.get("upload", {})
+    max_attempts = upload_config.get("max_attempts", 3)
+    
     for item in pending[:]:  # Copy list to avoid modification during iteration
         file_path = item.get("file_path")
         scheduled_time = item.get("scheduled_time")
         metadata = item.get("metadata", {})
         attempts = item.get("attempts", 0)
-        max_attempts = 3
         
         # Skip if max attempts reached
         if attempts >= max_attempts:

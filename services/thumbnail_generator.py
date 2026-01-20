@@ -6,6 +6,8 @@ from openai import OpenAI
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance, ImageFilter
 import random
 
+from config.channel import channel_config
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_malayalam_headline(topic, title, emotion_type="curiosity", video_type="short"):
@@ -150,18 +152,28 @@ def render_text_overlay(image, text, video_type, font_path, font_size, text_colo
     text_height = bbox[3] - bbox[1]
     
     # ULTRA-THICK STROKES for Kerala readability (needed for padding calculation)
-    stroke_width = 12 if video_type == "short" else 8
-    stroke_padding = stroke_width + 2  # Extra padding for outer stroke
+    thumb_config = channel_config.get("thumbnails", {})
+    if video_type == "short":
+        stroke_width = thumb_config.get("short", {}).get("stroke_width", 12)
+    else:
+        stroke_width = thumb_config.get("long", {}).get("stroke_width", 8)
+    
+    stroke_padding_extra = thumb_config.get("common", {}).get("stroke_padding_extra", 2)
+    stroke_padding = stroke_width + stroke_padding_extra  # Extra padding for outer stroke
     
     # SMART AUTO-SIZING: Reduce if text too wide
-    # Account for horizontal padding (5% on each side = 10% total)
-    # Plus stroke padding on each side
-    horizontal_padding = max(int(w * 0.05), 40)  # 5% or minimum 40px per side
+    # Account for horizontal padding (configurable percentage)
+    common_config = thumb_config.get("common", {})
+    horizontal_padding_percent = common_config.get("horizontal_padding_percent", 5) / 100.0
+    min_horizontal_padding_px = common_config.get("min_horizontal_padding_px", 40)
+    horizontal_padding = max(int(w * horizontal_padding_percent), min_horizontal_padding_px)
     max_width = w - (horizontal_padding * 2) - (stroke_padding * 2)  # Account for padding and stroke
     attempts = 0
     final_font_size = font_size
-    while text_width > max_width and attempts < 10:
-        final_font_size = int(final_font_size * 0.95)  # Reduce by 5%
+    max_font_resize_attempts = common_config.get("max_font_resize_attempts", 10)
+    font_resize_reduction = common_config.get("font_resize_reduction", 0.95)
+    while text_width > max_width and attempts < max_font_resize_attempts:
+        final_font_size = int(final_font_size * font_resize_reduction)
         font = ImageFont.truetype(font_path, final_font_size)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
@@ -174,13 +186,19 @@ def render_text_overlay(image, text, video_type, font_path, font_size, text_colo
     # stroke_padding already calculated above
     
     if video_type == "short":
-        # Shorts: Top padding (5% of height, minimum 80px to account for stroke)
-        top_padding = max(int(h * 0.05), 80 + stroke_padding)
+        # Shorts: Top padding (configurable percentage)
+        short_config = thumb_config.get("short", {})
+        top_padding_percent = short_config.get("top_padding_percent", 5) / 100.0
+        min_top_padding_px = short_config.get("min_top_padding_px", 80)
+        top_padding = max(int(h * top_padding_percent), min_top_padding_px + stroke_padding)
         # Ensure text center position accounts for half text height + padding
         y = top_padding + (text_height / 2)
     else:  # long
-        # Long: Top padding (8% of height, minimum 100px)
-        top_padding = max(int(h * 0.08), 100 + stroke_padding)
+        # Long: Top padding (configurable percentage)
+        long_config = thumb_config.get("long", {})
+        top_padding_percent = long_config.get("top_padding_percent", 8) / 100.0
+        min_top_padding_px = long_config.get("min_top_padding_px", 100)
+        top_padding = max(int(h * top_padding_percent), min_top_padding_px + stroke_padding)
         y = top_padding + (text_height / 2)
     
     # Horizontal centering (already handled by max_width, but ensure no overflow)
@@ -278,6 +296,103 @@ def validate_thumbnail_contrast(image_path, text_color, bg_sample_coords):
         return True  # Assume okay if validation fails
 
 
+def extract_hero_object(topic):
+    """
+    Extract hero object from topic for visual focus in thumbnails.
+    
+    Args:
+        topic: Video topic string
+    
+    Returns:
+        Clear, visually obvious hero object description
+    """
+    topic_lower = topic.lower()
+    
+    # Finance keywords
+    if any(word in topic_lower for word in ['money', 'finance', 'invest', 'save', 'tax', 'bank', 'rates', 'rupee', 'wealth', 'salary', 'income']):
+        return "floating Indian rupee notes and gold coins"
+    # Tech keywords
+    elif any(word in topic_lower for word in ['tech', 'ai', 'phone', 'app', 'digital', 'software', 'computer', 'internet', 'online']):
+        return "glowing smartphone or digital device"
+    # Health keywords
+    elif any(word in topic_lower for word in ['health', 'fitness', 'diet', 'exercise', 'wellness', 'food', 'nutrition']):
+        return "vibrant healthy food or fitness equipment"
+    # Business/Career keywords
+    elif any(word in topic_lower for word in ['business', 'career', 'job', 'work', 'success', 'entrepreneur']):
+        return "professional business elements or success symbols"
+    # Education keywords
+    elif any(word in topic_lower for word in ['learn', 'education', 'study', 'skill', 'course', 'tutorial']):
+        return "educational elements or learning symbols"
+    # Default
+    else:
+        return f"prominent {topic} element"
+
+
+def generate_ctr_thumbnail_prompt(topic, video_type="short"):
+    """
+    Generate high-CTR DALL-E prompt with random variation selection.
+    
+    Implements 5 proven CTR variations:
+    1. Curiosity + Mystery (Best CTR)
+    2. Problem vs Solution Split
+    3. Before/After Transformation
+    4. Danger/Warning Attention Grabber
+    5. Luxury Premium Look
+    
+    Args:
+        topic: Video topic
+        video_type: "short" or "long"
+    
+    Returns:
+        Complete DALL-E prompt string
+    """
+    hero_object = extract_hero_object(topic)
+    variation = random.choice([1, 2, 3, 4, 5])
+    
+    # Base requirements that apply to all variations
+    base_requirements = """ultra sharp, high contrast, cinematic lighting, vibrant colors, clean composition.
+Subject must be large and close-up, with strong facial expression and clear emotion.
+Add one clear hero object related to the topic (large, centered, visually obvious): {hero_object}.
+Use depth of field blur for background, and strong foreground separation.
+Add dynamic action cues like glowing edges, motion blur streaks, arrow-like direction shapes (but NOT actual arrows with text).
+Composition must include clean empty space on one side for adding text later.
+Subject must fill 60-70% of the frame.
+Background must be simple + blurred.
+Leave 25-30% clean space for text placement.
+ABSOLUTE RULE: The image must contain NO TEXT, NO LETTERS, NO NUMBERS, NO LOGOS, NO WATERMARKS, NO UI LABELS, NO SYMBOLS that look like writing.
+If any text appears, remove it completely and replace with abstract shapes only.
+Make it look like a real YouTube thumbnail that stops scrolling instantly.
+8K quality, hyper realistic, photorealistic 3D render.""".format(hero_object=hero_object)
+    
+    # Add aspect ratio specification
+    if video_type == "long":
+        aspect_spec = "16:9 landscape format,"
+    else:
+        aspect_spec = "9:16 portrait format,"
+    
+    # Variation 1: Curiosity + Mystery (Best CTR)
+    if variation == 1:
+        prompt = f"A close-up shocked Indian face looking at a glowing {hero_object} related to {topic}, dramatic lighting, strong contrast, dark background with clean empty space, {aspect_spec} {base_requirements}"
+    
+    # Variation 2: Problem vs Solution Split
+    elif variation == 2:
+        prompt = f"Split-screen image: left side messy/problem scene related to {topic}, right side clean/result scene, big expressive Indian face in middle reacting with surprise, {aspect_spec} {base_requirements}"
+    
+    # Variation 3: Before/After Transformation
+    elif variation == 3:
+        prompt = f"A transformation scene showing before vs after of {topic}, glowing transition in center, expressive Indian face showing amazement at the transformation, cinematic lighting, {aspect_spec} {base_requirements}"
+    
+    # Variation 4: Danger/Warning Attention Grabber
+    elif variation == 4:
+        prompt = f"A close-up worried Indian face with a dangerous-looking glowing red element related to {topic}, intense lighting, dramatic mood, urgent expression, {aspect_spec} {base_requirements}"
+    
+    # Variation 5: Luxury Premium Look
+    else:  # variation == 5
+        prompt = f"Minimal clean premium scene with a confident Indian face + sleek {hero_object} related to {topic}, Apple/Stripe style lighting, sophisticated composition, {aspect_spec} {base_requirements}"
+    
+    return prompt.strip()
+
+
 def generate_thumbnail(topic, title, video_type="short", output_path=None):
     """
     Generates optimized thumbnails with CTR psychology.
@@ -295,32 +410,24 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
         Exception if generation fails
     """
     # ULTIMATE KERALA STRATEGY: MAXIMUM MASSIVE text sizing
+    thumb_config = channel_config.get("thumbnails", {})
     if video_type == "long":
-        size = "1792x1024"  # DALL-E landscape (will be resized to 1920x1080)
-        dimensions = (1920, 1080)  # Final target dimensions (16:9)
-        font_size = 180  # MAXIMUM for Kerala (was 160px)
+        long_config = thumb_config.get("long", {})
+        size = long_config.get("dall_e_size", "1792x1024")  # DALL-E landscape (will be resized to 1920x1080)
+        target_dims = long_config.get("target_dimensions", [1920, 1080])
+        dimensions = tuple(target_dims)  # Final target dimensions (16:9)
+        font_size = long_config.get("font_size", 180)  # MAXIMUM for Kerala (was 160px)
         position = ('center', 200)
     else:  # short
-        size = "1024x1792"  # Portrait 9:16
-        dimensions = (1080, 1920)
-        font_size = 400  # ABSOLUTE MAXIMUM for shorts - 4x original! (was 100px)
+        short_config = thumb_config.get("short", {})
+        size = short_config.get("dall_e_size", "1024x1792")  # Portrait 9:16
+        target_dims = short_config.get("target_dimensions", [1080, 1920])
+        dimensions = tuple(target_dims)
+        font_size = short_config.get("font_size", 400)  # ABSOLUTE MAXIMUM for shorts - 4x original! (was 100px)
         position = 'center'
     
-    # ULTIMATE INDIAN-CONTEXT DALL-E PROMPTS (Kerala optimized)
-    topic_keywords = topic.lower()
-    
-    if video_type == "long":
-        # Long: Indian faces, emotional reactions, RED arrows
-        if any(word in topic_keywords for word in ['money', 'finance', 'invest', 'save', 'tax', 'bank', 'rates']):
-            prompt = f"Professional Indian YouTuber with very surprised expression, mouth open, pointing dramatically at floating Indian rupee notes and gold coins, large red upward arrow, financial chart in background, vibrant gold and green neon lighting, cinematic photorealistic 3D render, Indian person's face showing amazement, NO TEXT overlay, 8K quality"
-        else:
-            prompt = f"Professional Indian content creator with extremely surprised expression pointing at {topic}, large red arrow or circle highlighting key element, dramatic before/after split composition, vibrant contrasting colors, cinematic lighting, hyper realistic Indian face, NO TEXT, 8K detail"
-    else:
-        # Shorts: Close-up Indian faces, maximum drama
-        if any(word in topic_keywords for word in ['money', 'finance', 'invest', 'save', 'tax', 'bank', 'rates']):
-            prompt = f"Close-up of Indian person's extremely surprised face (mouth wide open), Indian rupee notes flying at camera, large red upward pointing arrow, gold coins background, person pointing finger at viewer, dramatic cinematic lighting, vibrant gold and green colors, portrait 9:16, NO TEXT, hyper realistic Indian face, eye-catching"
-        else:
-            prompt = f"Close-up Indian face showing pure surprise emotion, pointing finger urgently, {topic} element behind with red circle or arrow, vibrant energetic colors, dramatic portrait lighting 9:16, NO TEXT, attention-grabbing, realistic Indian person, instant stop-scroll impact"
+    # Generate high-CTR DALL-E prompt using new CTR-optimized system
+    prompt = generate_ctr_thumbnail_prompt(topic, video_type)
     
     print(f"Generating {video_type.upper()} thumbnail ({dimensions[0]}x{dimensions[1]}) for: {topic[:50]}...")
     
@@ -373,11 +480,13 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
     path = output_path or f"videos/output/thumb_{topic_hash}_{safe_topic.replace(' ', '_')}_{video_type}.png"
     os.makedirs(os.path.dirname(path), exist_ok=True)
     
-    MAX_RETRIES = 5
+    common_config = channel_config.get("thumbnails.common", {})
+    MAX_RETRIES = common_config.get("download_max_retries", 5)
+    download_timeout = common_config.get("download_timeout_seconds", 120)
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
-            r = requests.get(url, timeout=120)
+            r = requests.get(url, timeout=download_timeout)
             r.raise_for_status()
             with open(path, "wb") as f:
                 f.write(r.content)
@@ -464,7 +573,9 @@ def generate_thumbnail(topic, title, video_type="short", output_path=None):
     image = apply_professional_effects(image)
     
     # Save with high quality
-    image.save(path, quality=95, optimize=True)
+    # Save with high quality
+    image_quality = channel_config.get("thumbnails.common.image_quality", 95)
+    image.save(path, quality=image_quality, optimize=True)
     
     # Post-render validation and quality checks
     if not os.path.exists(path):

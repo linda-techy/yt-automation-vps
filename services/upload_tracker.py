@@ -85,7 +85,7 @@ def get_pending_uploads():
     status = load_upload_status()
     return status.get("pending_uploads", [])
 
-def get_upload_time_from_scheduled(scheduled_time_str: str, buffer_hours: int = 1) -> datetime.datetime:
+def get_upload_time_from_scheduled(scheduled_time_str: str, buffer_hours: int = None) -> datetime.datetime:
     """
     Extract upload time from scheduled publish time.
     
@@ -100,6 +100,11 @@ def get_upload_time_from_scheduled(scheduled_time_str: str, buffer_hours: int = 
         datetime.datetime: Upload time in UTC
     """
     try:
+        if buffer_hours is None:
+            from config.channel import channel_config
+            upload_config = channel_config.get("upload", {})
+            buffer_hours = upload_config.get("buffer_hours", 1)
+        
         # Parse scheduled time (handle both 'Z' and '+00:00' formats)
         scheduled = datetime.datetime.fromisoformat(scheduled_time_str.replace('Z', '+00:00'))
         

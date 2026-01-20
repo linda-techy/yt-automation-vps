@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-20T10:40:12.556019",
+  "timestamp": "2026-01-20T12:40:24.798112",
   "disk": {
     "free_gb": 23.93,
     "total_gb": 76.8,
@@ -7,10 +7,10 @@
     "healthy": true
   },
   "memory": {
-    "available_gb": 2.56,
+    "available_gb": 3.28,
     "total_gb": 15.65,
-    "used_percent": 83.7,
-    "healthy": false
+    "used_percent": 79.1,
+    "healthy": true
   },
   "dependencies": {
     "dependencies": {
@@ -25,5 +25,5 @@
     "healthy": true,
     "issues": []
   },
-  "overall_healthy": false
+  "overall_healthy": true
 }

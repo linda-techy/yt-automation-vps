@@ -42,29 +42,44 @@ def get_smart_publish_time():
         # KERALA-OPTIMIZED: Day-aware scheduling for maximum engagement
         weekday = now_local.weekday()  # 0=Mon, 6=Sun
         
-        if weekday == 4:  # Friday - GOLDEN SLOT (weekend anticipation)
-            hour, minute = 20, 0  # 8:00 PM - highest weekly engagement
-        elif weekday == 5:  # Saturday - weekend leisure
-            hour, minute = 19, 0  # 7:00 PM - earlier leisure time peak
-        elif weekday == 6:  # Sunday - preparing for week
-            hour, minute = 18, 30  # 6:30 PM - lower engagement, earlier slot
-        elif weekday == 0:  # Monday - fresh week energy
-            hour, minute = 20, 30  # 8:30 PM - "Monday motivation" crowd
-        else:  # Tue-Thu - standard weekdays
-            hour, minute = 21, 0  # 9:00 PM - peak post-work relaxation
+        # Get weekday times from config
+        scheduler_config = channel_config.get("scheduler", {})
+        weekday_times = scheduler_config.get("weekday_times", {})
+        buffer_hours = scheduler_config.get("buffer_hours", 2)
+        jitter_range = scheduler_config.get("jitter_minutes", [-10, 10])
+        
+        # Map weekday to day name
+        day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        day_name = day_names[weekday]
+        
+        # Get time for this weekday from config, fallback to defaults
+        if day_name in weekday_times:
+            hour, minute = weekday_times[day_name]
+        else:
+            # Fallback defaults
+            if weekday == 4:  # Friday
+                hour, minute = 20, 0
+            elif weekday == 5:  # Saturday
+                hour, minute = 19, 0
+            elif weekday == 6:  # Sunday
+                hour, minute = 18, 30
+            elif weekday == 0:  # Monday
+                hour, minute = 20, 30
+            else:  # Tue-Thu
+                hour, minute = 21, 0
         
         # Create candidate time for TODAY
         target_today = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
         
         # If today's slot is passed (or too close), schedule for TOMORROW
-        # Buffer: allow upload if at least 2 hours before slot
-        if now_local > (target_today - datetime.timedelta(hours=2)):
+        # Buffer: allow upload if at least buffer_hours before slot
+        if now_local > (target_today - datetime.timedelta(hours=buffer_hours)):
             publish_time = target_today + datetime.timedelta(days=1)
         else:
             publish_time = target_today
             
-        # Add natural jitter (+/- 10 mins) to look organic
-        jitter = random.randint(-10, 10)
+        # Add natural jitter (from config) to look organic
+        jitter = random.randint(jitter_range[0], jitter_range[1])
         publish_time += datetime.timedelta(minutes=jitter)
         
         # Convert back to UTC for YouTube API

@@ -29,17 +29,26 @@ except ImportError:
 
 
 class YouTubeRateLimiter:
-    def __init__(self, daily_quota=10000):
-        self.daily_quota = daily_quota
+    def __init__(self, daily_quota=None):
+        from config.channel import channel_config
+        quota_config = channel_config.get("quota", {})
+        
+        if daily_quota is None:
+            self.daily_quota = quota_config.get("daily_limit", 10000)
+        else:
+            self.daily_quota = daily_quota
+            
         if not USE_PERSISTENT_QUOTA:
             # Fallback to in-memory (not recommended for production)
             self.used_quota = 0
             self.reset_time = datetime.now() + timedelta(days=1)
+        
+        costs_config = quota_config.get("costs", {})
         self.quota_costs = {
-            'upload': 1600,
-            'comment': 50,
-            'update': 50,
-            'list': 1
+            'upload': costs_config.get("upload", 1600),
+            'comment': costs_config.get("comment", 50),
+            'update': costs_config.get("update", 50),
+            'list': costs_config.get("list", 1)
         }
     
     def check_quota(self, operation='upload'):

@@ -8,18 +8,29 @@ Rejects content below threshold to maintain YPP compliance.
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from config.channel import channel_config
 
 
 class QualityScorer:
     """Scores content quality before upload"""
     
-    # Quality thresholds
-    MIN_SCRIPT_SCORE = 7.0  # Out of 10
-    MIN_VIDEO_SCORE = 6.5   # Out of 10
-    MIN_METADATA_SCORE = 7.0  # Out of 10
-    
     def __init__(self):
         self.scoring_history: List[Dict[str, Any]] = []
+        # Load quality thresholds from config
+        qc_config = channel_config.get("quality_control.thresholds", {})
+        self.MIN_SCRIPT_SCORE = qc_config.get("min_script_score", 7.0)  # Out of 10
+        self.MIN_VIDEO_SCORE = qc_config.get("min_video_score", 6.5)   # Out of 10
+        self.MIN_METADATA_SCORE = qc_config.get("min_metadata_score", 7.0)  # Out of 10
+        self.MIN_OVERALL_SCORE = qc_config.get("min_overall_score", 7.0)  # Out of 10
+        
+        # Load scoring weights from config
+        weights_config = channel_config.get("quality_control.weights", {})
+        self.WEIGHT_SCRIPT_LENGTH = weights_config.get("script_length", 2.0)
+        self.WEIGHT_TITLE_QUALITY = weights_config.get("title_quality", 1.5)
+        self.WEIGHT_VISUAL_CUES = weights_config.get("visual_cues", 1.5)
+        self.WEIGHT_SEO_COMPLETENESS = weights_config.get("seo_completeness", 1.0)
+        self.WEIGHT_YPP_SAFETY = weights_config.get("ypp_safety", 2.0)
+        self.WEIGHT_ORIGINALITY = weights_config.get("originality", 2.0)
     
     def score_script(self, script_data: Dict[str, Any], topic: str) -> Dict[str, Any]:
         """
@@ -41,33 +52,33 @@ class QualityScorer:
         title = script_data.get("title", "")
         visual_cues = script_data.get("visual_cues", [])
         
-        # 1. Script length (2 points)
+        # 1. Script length (weighted points)
         word_count = len(script_text.split())
         if 50 <= word_count <= 100:
-            score += 2.0
+            score += self.WEIGHT_SCRIPT_LENGTH
             strengths.append("Optimal script length")
         elif 30 <= word_count < 50 or 100 < word_count <= 150:
-            score += 1.0
+            score += self.WEIGHT_SCRIPT_LENGTH / 2.0
             issues.append(f"Script length ({word_count} words) slightly off optimal")
         else:
             issues.append(f"Script length ({word_count} words) too short/long")
         
-        # 2. Title quality (1.5 points)
+        # 2. Title quality (weighted points)
         if title and len(title) > 10:
             if any(char in title for char in ['?', '!', ':', '-']):
-                score += 0.5  # Has engagement markers
+                score += self.WEIGHT_TITLE_QUALITY / 3.0  # Has engagement markers
             if len(title) <= 60:
-                score += 1.0  # Good length
+                score += self.WEIGHT_TITLE_QUALITY * 2.0 / 3.0  # Good length
             strengths.append("Good title")
         else:
             issues.append("Title missing or too short")
         
-        # 3. Visual cues (1.5 points)
+        # 3. Visual cues (weighted points)
         if visual_cues and len(visual_cues) >= 3:
-            score += 1.5
+            score += self.WEIGHT_VISUAL_CUES
             strengths.append("Adequate visual cues")
         elif visual_cues and len(visual_cues) >= 1:
-            score += 0.75
+            score += self.WEIGHT_VISUAL_CUES / 2.0
             issues.append("Insufficient visual cues")
         else:
             issues.append("No visual cues provided")

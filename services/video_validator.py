@@ -83,9 +83,15 @@ def validate_video(video_path, expected_min_duration=10, expected_format="9:16")
                 results["errors"].append(f"Unexpected resolution for 9:16: {width}x{height}")
         
         # Validate FPS
+        from config.channel import channel_config
+        validation_config = channel_config.get("validation", {})
+        fps_config = validation_config.get("fps", {})
+        min_fps = fps_config.get("min", 23)
+        max_fps = fps_config.get("max", 61)
+        
         results["fps"] = clip.fps
-        if clip.fps < 23 or clip.fps > 61:
-            results["errors"].append(f"Unusual FPS: {clip.fps} (expected 24-60)")
+        if clip.fps < min_fps or clip.fps > max_fps:
+            results["errors"].append(f"Unusual FPS: {clip.fps} (expected {min_fps}-{max_fps})")
         
         # Validate audio
         results["has_audio"] = clip.audio is not None

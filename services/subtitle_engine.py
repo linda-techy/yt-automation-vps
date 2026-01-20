@@ -133,8 +133,10 @@ def create_whisper_captions(video_clip, whisper_result):
                 if not word: continue
                 
                 # Enforce minimum duration for visibility
-                if end - start < 0.2:
-                    end = start + 0.2
+                from config.channel import channel_config
+                min_duration = channel_config.get("validation.min_duration_seconds", 0.2)
+                if end - start < min_duration:
+                    end = start + min_duration
                 
                 try:
                     # Alternating colors for emphasis (Yellow / White)

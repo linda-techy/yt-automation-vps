@@ -53,11 +53,13 @@ def mix_audio(voice_path, music_path=None, output_path="videos/temp/mixed_audio.
         music = music.volumex(vol)
         
         # Boost voice volume for clarity
-        voice_boosted = voice.volumex(1.5)
+        voice_boost = channel_config.get("audio.voice_boost", 1.5)
+        voice_boosted = voice.volumex(voice_boost)
         
         # Composite
         final_audio = CompositeAudioClip([voice_boosted, music])
-        final_audio.fps = 44100
+        sample_rate = channel_config.get("audio.sample_rate", 44100)
+        final_audio.fps = sample_rate
         final_audio.write_audiofile(output_path, logger=None)
         print(f"[Audio Mixer] Mixed audio created: {output_path}")
         

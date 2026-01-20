@@ -3,6 +3,7 @@ import gc
 import logging
 from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips, AudioFileClip, CompositeVideoClip
 from services.visual_effects import transform_clip, VisualEffects
+from config.channel import channel_config
 
 def build_long_video_chunked(audio_path, asset_paths, script_data, output_path="videos/output/final_long.mp4"):
     """
@@ -25,7 +26,8 @@ def build_long_video_chunked(audio_path, asset_paths, script_data, output_path="
         raise Exception("Whisper audio analysis returned empty scene durations. NO FALLBACK ALLOWED.")
 
     # 2. Chunking Logic
-    CHUNK_SIZE = 60 # seconds
+    video_building_config = channel_config.get("video_building.long", {})
+    CHUNK_SIZE = video_building_config.get("chunk_size_seconds", 60)  # seconds
     temp_chunks = []
     
     current_time = 0
@@ -140,7 +142,11 @@ def build_long_video_chunked(audio_path, asset_paths, script_data, output_path="
             
             # Write Temp File
             temp_path = f"videos/temp/long_chunk_{chunk_idx}.mp4"
-            chunk_video.write_videofile(temp_path, fps=24, codec='libx264', audio_codec='aac', threads=2, logger=None)
+            fps = video_building_config.get("fps", 24)
+            codec = video_building_config.get("codec", "libx264")
+            audio_codec = video_building_config.get("audio_codec", "aac")
+            chunk_threads = video_building_config.get("chunk_threads", 2)
+            chunk_video.write_videofile(temp_path, fps=fps, codec=codec, audio_codec=audio_codec, threads=chunk_threads, logger=None)
             temp_chunks.append(temp_path)
             
             # Clean up chunk resources
@@ -172,7 +178,8 @@ def build_long_video_chunked(audio_path, asset_paths, script_data, output_path="
         # This provides better UX as viewers can toggle subtitles on/off
         logging.info("Subtitles will be provided by YouTube auto-CC")
         
-        final.write_videofile(output_path, fps=24, codec='libx264', audio_codec='aac', threads=4)
+        final_threads = video_building_config.get("final_threads", 4)
+        final.write_videofile(output_path, fps=fps, codec=codec, audio_codec=audio_codec, threads=final_threads)
         
         # Cleanup
         for c in clips: c.close()

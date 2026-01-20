@@ -3,6 +3,7 @@ import random
 import logging
 from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip, CompositeAudioClip
 from moviepy.audio.fx.all import audio_normalize
+from config.channel import channel_config
 # Subtitles removed - relying on YouTube auto-CC
 # from services.subtitle_engine import add_dynamic_captions
 
@@ -196,7 +197,12 @@ def build_final_video(audio_path, asset_paths, script_data, output_path="videos/
         logging.debug(f"[Video Builder] Failed to add watermark: {e}")
     
     # Write
-    final_video.write_videofile(output_path, fps=24, codec='libx264', audio_codec='aac', threads=4)
+    video_building_config = channel_config.get("video_building.short", {})
+    fps = video_building_config.get("fps", 24)
+    codec = video_building_config.get("codec", "libx264")
+    audio_codec = video_building_config.get("audio_codec", "aac")
+    threads = video_building_config.get("threads", 4)
+    final_video.write_videofile(output_path, fps=fps, codec=codec, audio_codec=audio_codec, threads=threads)
     
     # Cleanup
     final_video.close()

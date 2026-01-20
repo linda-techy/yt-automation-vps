@@ -18,6 +18,7 @@ import datetime
 from typing import Dict, List, Optional
 
 from utils.file_locking import load_json_safe, save_json_safe
+from config.channel import channel_config
 
 VIDEO_LIFECYCLE_DB = "channel/video_lifecycle.json"
 
@@ -157,7 +158,7 @@ def get_videos_safe_to_delete() -> List[Dict]:
     
     return safe_videos
 
-def cleanup_uploaded_videos(max_age_hours: int = 48) -> int:
+def cleanup_uploaded_videos(max_age_hours: int = None) -> int:
     """
     Delete videos that have been successfully uploaded and published.
     
@@ -168,11 +169,15 @@ def cleanup_uploaded_videos(max_age_hours: int = 48) -> int:
     Videos scheduled for future publication are NEVER deleted.
     
     Args:
-        max_age_hours: Only delete videos published more than this many hours ago
+        max_age_hours: Only delete videos published more than this many hours ago (default from config)
     
     Returns:
         Number of files deleted
     """
+    if max_age_hours is None:
+        lifecycle_config = channel_config.get("lifecycle", {})
+        max_age_hours = lifecycle_config.get("max_age_hours", 48)
+    
     db = load_lifecycle_db()
     deleted_count = 0
     now_utc = datetime.datetime.now(datetime.timezone.utc)
