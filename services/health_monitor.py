@@ -162,7 +162,8 @@ class ErrorRecoveryManager:
             try:
                 with open(self.history_path, 'r') as f:
                     history = json.load(f)
-            except:
+            except Exception as e:
+                logging.debug(f"[Recovery] Failed to load error history: {e}")
                 history = []
                 
         history.append(error_entry)
@@ -190,7 +191,8 @@ class ErrorRecoveryManager:
                 e for e in history
                 if datetime.fromisoformat(e['timestamp']) > cutoff
             ]
-        except:
+        except Exception as e:
+            logging.debug(f"[Recovery] Failed to get recent errors: {e}")
             return []
             
     def detect_error_patterns(self) -> Dict:

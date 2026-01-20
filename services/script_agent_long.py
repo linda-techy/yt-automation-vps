@@ -261,6 +261,12 @@ def extract_json_from_response(content: str) -> Optional[str]:
     return None
 
 
+# Custom exception to distinguish refusals from parsing errors
+class LLMRefusalError(ValueError):
+    """Raised when LLM refuses to fulfill request"""
+    pass
+
+
 # ============================================================================
 # COGNITIVE NODES
 # ============================================================================
@@ -390,8 +396,8 @@ def draft_sections_node(state: DocumentaryState) -> dict:
             extracted_json = extract_json_from_response(response.content)
             
             if extracted_json is None:
-                # Refusal or empty - will be handled by fallback
-                raise ValueError("LLM refusal or empty response detected")
+                # Refusal or empty - raise custom exception to skip retry
+                raise LLMRefusalError("LLM refusal or empty response detected")
             
             # Try to parse JSON
             try:
@@ -400,8 +406,23 @@ def draft_sections_node(state: DocumentaryState) -> dict:
                 # Log for debugging
                 logging.error(f"[DocBrain] JSON decode error after extraction. Preview: {extracted_json[:200]}...")
                 raise json_error
+        except LLMRefusalError as refusal_error:
+            # LLM refused - skip retry and use fallback directly
+            logging.warning(f"[DocBrain] LLM refusal detected, using fallback (no retry)")
+            # Create fallback section immediately
+            fallback_header = section_plan.get("name", "Section")
+            if isinstance(fallback_header, dict):
+                fallback_header = fallback_header.get('title', fallback_header.get('name', 'Section'))
+            elif not isinstance(fallback_header, str):
+                fallback_header = str(fallback_header) if fallback_header else 'Section'
+            
+            section = {
+                "header": fallback_header,
+                "content": f"[Content generation refused. Topic: {state['topic']}]", 
+                "visual_cues": []
+            }
         except Exception as e:
-            # Retry once with more explicit prompt
+            # Retry once with more explicit prompt (only for parsing errors, not refusals)
             try:
                 logging.warning(f"[DocBrain] Section parsing failed: {e}, retrying with explicit JSON request...")
                 retry_prompt = f"""{prompt}
@@ -564,7 +585,7 @@ def critique_long_node(state: DocumentaryState) -> dict:
         extracted_json = extract_json_from_response(response.content)
         
         if extracted_json is None:
-            raise ValueError("LLM refusal or empty response detected")
+            raise LLMRefusalError("LLM refusal or empty response detected")
         
         # Try to parse JSON
         try:

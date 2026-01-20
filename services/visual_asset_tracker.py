@@ -106,8 +106,8 @@ def get_used_visual_queries(days: int = MAX_HISTORY_DAYS) -> Set[str]:
                 query = asset.get("query", "")
                 if query:
                     used_queries.add(query.lower().strip())
-        except:
-            pass
+        except Exception as e:
+            logging.debug(f"[VisualTracker] Error checking if visual recently used: {e}")
     
     return used_queries
 
@@ -219,7 +219,8 @@ def deduplicate_visual_cues(visual_cues: List[str], video_topic: str = None) -> 
     try:
         from config.channel import channel_config
         niche = channel_config.niche
-    except:
+    except Exception as e:
+        logging.debug(f"[VisualTracker] Failed to load niche from config: {e}, using default")
         niche = "Technology"
     
     for cue in visual_cues:
